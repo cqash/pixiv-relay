@@ -11,6 +11,12 @@ export PATH="$PWD/.toolchain/go/bin:$PATH"
 go run ./cmd/server          # 默认监听 :8080，数据落 ./data
 ```
 
+Windows 一键启动（自动读 `.env`，二进制缺失时自动构建；`start.bat build` 强制重建）：
+
+```bat
+start.bat
+```
+
 Docker（单容器，bind 卷 ./data）：
 
 ```bash
