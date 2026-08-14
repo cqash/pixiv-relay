@@ -20,6 +20,11 @@ type Config struct {
 	// 公网部署必须配置二者之一（§9）。
 	InviteCodes  []string
 	StaticTokens []string
+
+	// RelayExtraHosts /relay 域名白名单追加项（§6.1）。
+	// UpstreamProxy 上游出口代理（§10），空 = 直连。
+	RelayExtraHosts []string
+	UpstreamProxy   string
 }
 
 // Load 读取环境变量并应用默认值。
@@ -37,11 +42,13 @@ func Load() *Config {
 		dbPath = filepath.Join(dataDir, "relay.db")
 	}
 	return &Config{
-		Port:         port,
-		DataDir:      dataDir,
-		DBPath:       dbPath,
-		InviteCodes:  splitCSV(os.Getenv("INVITE_CODES")),
-		StaticTokens: splitCSV(os.Getenv("STATIC_TOKENS")),
+		Port:            port,
+		DataDir:         dataDir,
+		DBPath:          dbPath,
+		InviteCodes:     splitCSV(os.Getenv("INVITE_CODES")),
+		StaticTokens:    splitCSV(os.Getenv("STATIC_TOKENS")),
+		RelayExtraHosts: splitCSV(os.Getenv("RELAY_EXTRA_HOSTS")),
+		UpstreamProxy:   strings.TrimSpace(os.Getenv("UPSTREAM_PROXY")),
 	}
 }
 

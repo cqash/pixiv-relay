@@ -133,16 +133,17 @@ pix_backend/
 
 ## 6. M3 网络中继 /relay（§6.1）
 
-- [ ] `POST /relay/v1/request`：
-  - 域名白名单：`app-api.pixiv.net`、`oauth.secure.pixiv.net`、`www.pixiv.net`（可配置扩展）
-  - 头白名单：`authorization`、`accept-language`、`content-type`、`user-agent`、`referer`；其余丢弃
-  - bodyBase64 上限 1 MB；`timeoutMs` 钳制 ≤ 60 s
+- [x] `POST /relay/v1/request`（`internal/relay/routes.go` + `service.go`；挂 auth 鉴权中间件 + 写端点限流 `common.NewLimiter(60, 10)`，key = accountID，§9）：
+  - 域名白名单：`app-api.pixiv.net`、`oauth.secure.pixiv.net`、`www.pixiv.net`，`RELAY_EXTRA_HOSTS` 可追加（config 扩展）；不在白名单 → 403 FORBIDDEN
+  - 头白名单：`authorization`、`accept-language`、`content-type`、`user-agent`、`referer`（大小写不敏感）；其余丢弃
+  - bodyBase64 上限 1 MB（解码后校验，超限 400）；`timeoutMs` 钳制 ≤ 60 s、缺省 30 s（`clampTimeout`）
   - 客户端未传 UA 时注入 `PixivIOSApp/5.8.0`
-  - `http.Client` + 自定义 `Transport` 出网，`UPSTREAM_PROXY` 经 `Transport.Proxy` 生效
-- [ ] 响应透传：status、白名单内响应头、bodyBase64
-- [ ] 日志：仅 method + host + 状态码 + 耗时，绝不落 Authorization 与 body（§6.1）
-- [ ] 错误映射：上游不可达/超时 → 502
-- [ ] 验收：httptest mock 上游，断言白名单过滤、头过滤、UA 注入、超时钳制、日志无敏感字段
+  - `http.Client` + 自定义 `Transport` 出网（`NewUpstreamClient`），`UPSTREAM_PROXY` 经 `Transport.Proxy` 生效
+  - **偏差/收紧**：url scheme 强制 https，否则 400（§4.1 全程 HTTPS；防降级为明文出网）
+- [x] 响应透传：status、白名单内响应头（`content-type`/`cache-control`/`retry-after`，小写键）、bodyBase64；响应体流式读但限 1 MB（`io.LimitReader` 多读 1 字节判定），超限 502
+- [x] 日志：仅 method + host + 状态码 + 耗时 + requestId，绝不落 Authorization 与 body（§6.1；上游 client.Do 的 err 含 URL query，也不进日志）
+- [x] 错误映射：上游不可达/超时 → 502 UPSTREAM_UNREACHABLE；域名 403 / 参数 400
+- [x] 验收：httptest mock 上游（`rewriteTransport` 把白名单域名改写到 httptest server，service 注入 `*http.Client`）；覆盖 GET/POST 透传、头过滤、UA 注入/透传、域名 403、method/scheme 400、body 超 1MB 400、超时钳制单测 + 慢上游超时 502、上游不可达 502（统一错误体 + requestId 头体一致）、响应超 1MB 502、未鉴权 401、限流 429（burst 10）、日志无敏感字段；`RELAY_EXTRA_HOSTS` 追加域名生效；vet/test/静态编译全过
 
 ---
 
