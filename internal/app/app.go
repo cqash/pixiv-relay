@@ -19,10 +19,18 @@ import (
 	"github.com/arkpix/relay/internal/web"
 )
 
-// New 构建 HTTP 处理器。中间件链：RequestID → AccessLog → CORS（按白名单，默认关）→ mux。
+// New 构建 HTTP 处理器（出网客户端按 cfg.UpstreamProxy 创建）。语义同 NewWithClient。
+func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
+	return NewWithClient(cfg, db, nil)
+}
+
+// NewWithClient 构建 HTTP 处理器。中间件链：RequestID → AccessLog → CORS（按白名单，默认关）→ mux。
 // mux 兜底挂载 SPA 静态托管（§6.5，GET / 与前端路由 fallback）。
 // DATA_ENC_KEY 格式错误在此直接报错（调用方启动失败退出，§9）。
-func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
+// upstream 为 relay/img/recover 三模块统一出网客户端；nil 时按 cfg.UpstreamProxy
+// 创建生产客户端（relay.NewUpstreamClient）。集成测试注入自定义 Transport 把
+// 白名单域名改写到 httptest mock，保证端到端测试零真实外网。
+func NewWithClient(cfg *config.Config, db *sql.DB, upstream *http.Client) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 
@@ -38,9 +46,11 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 		return nil, err
 	}
 
-	upstream, err := relay.NewUpstreamClient(cfg.UpstreamProxy)
-	if err != nil {
-		return nil, err
+	if upstream == nil {
+		upstream, err = relay.NewUpstreamClient(cfg.UpstreamProxy)
+		if err != nil {
+			return nil, err
+		}
 	}
 	relay.RegisterRoutes(mux, relay.NewService(upstream, cfg.RelayExtraHosts), authMw, cfg.RateWritePerMin)
 

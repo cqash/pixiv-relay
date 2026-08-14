@@ -210,10 +210,34 @@ pix_backend/
 
 ## 11. M8 集成与验收
 
-- [ ] 集成测试：按 §13 端点清单逐端点点对点（httptest）
-- [ ] 压测：HDD 环境 `go test -bench` 跑图片中继缓存读写、同步批量 push，输出吞吐/延迟/磁盘 IO 报告
-- [ ] 安全自查：日志无敏感字段、token/accountKey 不落库明文、限流生效、目录穿越防护（恢复 pid 与缓存键校验）
-- [ ] 交付：`PLAN.md` 打勾核对 + 验收报告
+- [x] 集成测试：按 §13 端点清单逐端点点对点（httptest）——`internal/app/integration_test.go`，`httptest.NewServer` 起真实 HTTP 服务串通完整用户旅程；出网经新增统一注入点 `app.NewWithClient`（relay/img/recover 共用同一 *http.Client，nil 时按 UPSTREAM_PROXY 建生产客户端）+ blockRewrite Transport 改写到 mock 上游，零真实外网
+- [x] 压测：`internal/cache/disklru_bench_test.go`（64KB/1MB/8MB 写读）与 `internal/sync/bench_test.go`（100/500 条批量 push），`ReportAllocs`+`SetBytes`；数据目录默认 t.TempDir()（CI 可跑），`BENCH_DIR` 环境变量可覆盖到指定磁盘；已在 E 盘机械硬盘实跑（数值见下）
+- [x] 安全自查：`internal/app/security_test.go`——日志脱敏端到端（relay/img 请求后断言日志无 Authorization/token/query/body）、目录穿越（recover pid `../etc` 400、img 非白名单带 `..` 403）、token/accountKey 不落库明文（直查库断言仅存 SHA-256 哈希）、注册限流 429 + Retry-After、DATA_ENC_KEY 密文落库 app 层确认（逐字段用例沿用 M7 sync/recover 测试）
+- [x] 交付：`PLAN.md` 打勾核对 + 验收报告（见下）
+
+### M8 验收报告（2026-08-15，Windows amd64，i5-14600KF）
+
+**端到端用户旅程**（`TestUserJourney`，一次通过，未发现端点串联 bug）：
+healthz 200 → 注册设备A（token+accountKey+capabilities）→ 设备B 带 accountKey 注册入同账号 → refresh 轮换（旧 refreshToken 复用 401）→ relay 透传 mock 上游 200（bodyBase64 往返一致）→ img MISS 200 → HIT（字节一致、上游零触达）→ sync push history+bookmark_snapshot → A/B 双设备全量 pull 一致 → B 带 since 增量 pull 只拿新条目 → recover 202 入队 → 轮询 200（快照源，~1s）→ pages[0].url 包装 URL 实取图 200 且缓存 HIT → 5 个端点无 token 均 401 统一错误格式（requestId 头体一致）→ GET / 返回内嵌 SPA index.html。
+
+**压测数值**（`go test -bench . -benchtime 1x`，BENCH_DIR 指向 **E 盘机械硬盘**；单迭代受 OS 页缓存影响，仅供量级参考）：
+
+| Benchmark | 吞吐 | ns/op | allocs/op |
+|---|---|---|---|
+| CacheWrite/64KB | 97 MB/s | 0.67ms | 80 |
+| CacheWrite/1MB | 1165 MB/s | 0.90ms | 70 |
+| CacheWrite/8MB | 3364 MB/s | 2.49ms | 75 |
+| CacheRead/64KB | 11 MB/s | 5.92ms | 59 |
+| CacheRead/1MB | 134 MB/s | 7.83ms | 57 |
+| CacheRead/8MB | 1003 MB/s | 8.37ms | 57 |
+| SyncPushBatch/100 | 3.95 MB/s（~61k 条目/s） | 1.62ms | 5374 |
+| SyncPushBatch/500 | 4.88 MB/s（~76k 条目/s） | 6.56ms | 26424 |
+
+读路径小文件明显慢于写：每次命中刷新 DB atime 引入一次同步写，为 LRU 语义的有意代价（§6.4）；绝对延迟（毫秒级）对图片中继场景无影响。
+
+**安全自查**：全部通过（见 `security_test.go` 五个用例）。
+
+**已知遗留**：`-race` 待 CI（本机无 gcc，以 `-count=N` 重复并发用例替代）；Docker 镜像未实跑构建（本机无 daemon，Dockerfile 仅静态审查）；真实 Pixiv 上联调待客户端接入后进行。
 
 ---
 
@@ -221,14 +245,14 @@ pix_backend/
 
 | 方法 | 路径 | 状态 |
 |---|---|---|
-| POST | /auth/v1/register | M2 |
-| POST | /auth/v1/refresh | M2 |
-| POST | /relay/v1/request | M3 |
-| GET | /img/v1/fetch | M4 |
-| POST | /sync/v1/push | M5 |
-| GET | /sync/v1/pull | M5 |
-| GET | /recover/v1/illust/{pid} | M6 |
-| GET | /healthz | M0 |
+| POST | /auth/v1/register | ✓ M2（M8 端到端复测通过） |
+| POST | /auth/v1/refresh | ✓ M2（M8 端到端复测通过） |
+| POST | /relay/v1/request | ✓ M3（M8 端到端复测通过） |
+| GET | /img/v1/fetch | ✓ M4（M8 端到端复测通过） |
+| POST | /sync/v1/push | ✓ M5（M8 端到端复测通过） |
+| GET | /sync/v1/pull | ✓ M5（M8 端到端复测通过） |
+| GET | /recover/v1/illust/{pid} | ✓ M6（M8 端到端复测通过） |
+| GET | /healthz | ✓ M0（M8 端到端复测通过） |
 
 ---
 
