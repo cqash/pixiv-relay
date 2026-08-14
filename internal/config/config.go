@@ -37,6 +37,14 @@ type Config struct {
 	CacheLayout        string
 	CacheHighWatermark float64
 	CacheEvictionBatch int
+
+	// 恢复模块（§8）。RecoverTmpDir 为抓取临时目录，独立于缓存目录（HDD 分卷策略）；
+	// RecoverShared 放开恢复产物的跨账号共享（默认按账号隔离，§8.2）。
+	RecoverSources         []string
+	RecoverTTLDays         int
+	RecoverNegativeTTLDays int
+	RecoverShared          bool
+	RecoverTmpDir          string
 }
 
 // Load 读取环境变量并应用默认值。
@@ -57,6 +65,14 @@ func Load() *Config {
 	if cacheDir == "" {
 		cacheDir = filepath.Join(dataDir, "cache")
 	}
+	recoverSources := splitCSV(os.Getenv("RECOVER_SOURCES"))
+	if len(recoverSources) == 0 {
+		recoverSources = []string{"snapshot", "pixiv_cat", "pixiv_re"}
+	}
+	recoverTmpDir := os.Getenv("RECOVER_TMP_DIR")
+	if recoverTmpDir == "" {
+		recoverTmpDir = filepath.Join(dataDir, "recover-tmp")
+	}
 	return &Config{
 		Port:               port,
 		DataDir:            dataDir,
@@ -72,7 +88,22 @@ func Load() *Config {
 		CacheLayout:        os.Getenv("CACHE_LAYOUT"),
 		CacheHighWatermark: envFloat("CACHE_HIGH_WATERMARK", 0),
 		CacheEvictionBatch: envInt("CACHE_EVICTION_BATCH", 0),
+
+		RecoverSources:         recoverSources,
+		RecoverTTLDays:         envInt("RECOVER_TTL_DAYS", 90),
+		RecoverNegativeTTLDays: envInt("RECOVER_NEGATIVE_TTL_DAYS", 7),
+		RecoverShared:          envBool("RECOVER_SHARED"),
+		RecoverTmpDir:          recoverTmpDir,
 	}
+}
+
+// envBool 解析布尔环境变量（1/true/yes 为真，其余为假）。
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
 }
 
 // envInt64 解析整数环境变量，缺失或非法时返回 def。

@@ -11,6 +11,7 @@ import (
 	"github.com/arkpix/relay/internal/common"
 	"github.com/arkpix/relay/internal/config"
 	"github.com/arkpix/relay/internal/img"
+	"github.com/arkpix/relay/internal/recover"
 	"github.com/arkpix/relay/internal/relay"
 	syncsvc "github.com/arkpix/relay/internal/sync"
 )
@@ -52,6 +53,19 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 		return nil, err
 	}
 	syncsvc.RegisterRoutes(mux, syncSvc, authMw)
+
+	recoverSvc, err := recover.NewService(db, imgCache, upstream, recover.Config{
+		Sources:         cfg.RecoverSources,
+		TTLDays:         cfg.RecoverTTLDays,
+		NegativeTTLDays: cfg.RecoverNegativeTTLDays,
+		Shared:          cfg.RecoverShared,
+		TmpDir:          cfg.RecoverTmpDir,
+		ImgExtraHosts:   cfg.ImgExtraHosts,
+	})
+	if err != nil {
+		return nil, err
+	}
+	recover.RegisterRoutes(mux, recoverSvc, authMw)
 
 	return common.RequestID(common.AccessLog(mux)), nil
 }

@@ -184,16 +184,16 @@ pix_backend/
 
 ## 9. M6 删除图恢复 /recover（§8）
 
-- [ ] 建表 `recover_cache`：account_id、pid、pages(JSON)、source、meta、status、expire；负缓存 7 天、正缓存 TTL 90 天
-- [ ] `GET /recover/v1/illust/{pid}`：命中 200 `{status:"ready",pages,...}`；未命中入队 202 `{status:"fetching",retryAfterSec}`；负缓存/全失败 404 `{status:"not_found"}`
-- [ ] 异步队列 `queue.go`：goroutine + 带缓冲 channel 信号量，全局并发 ≤ 8、每源 ≤ 2、单源探测间隔 ≥ 1 s（`x/time/rate` 限速器）
-- [ ] 数据源插件 `sources/`：
-  - `snapshot.go`：客户端 push 的快照中 `imageUrls`（可能仍在 CDN 存活期）
-  - `mirror.go`：pixiv.cat / pixiv.re 等，`<pid>.jpg`、`<pid>_p<N>.jpg` 探测 + 内容校验（Content-Type/尺寸）
-  - 可配置源列表与优先级；源域名须同步加入 `IMG_EXTRA_HOSTS`（§6.2）
-- [ ] 抓取成功 → 图片落 `/img` 缓存（复用 M4），`pages[].url` 包装为 `{relay}/img/v1/fetch?url=<第三方源>`（§8.1）
-- [ ] 恢复产物按账号隔离（`account_id`），配置项可放开共享；`/img` 磁盘缓存跨用户共享（§8.2 可见性分层）
-- [ ] 验收：mock 镜像源，断言探测顺序、并发限制、轮询状态机 202→200/404、负缓存过期重试
+- [x] 建表 `recover_cache`（迁移 `0004_recover.sql`）：account_id、pid、pages(JSON)、source、meta(JSON)、status（ready/fetching/not_found）、expire（毫秒），PK(account_id,pid) + 索引 (pid,status,expire)（供共享模式跨账号查询）；正缓存 90 天（`RECOVER_TTL_DAYS`）、负缓存 7 天（`RECOVER_NEGATIVE_TTL_DAYS`）；fetching 仅占位（15 分钟守卫窗口，防 worker 崩溃残留，过期允许重新入队）
+- [x] `GET /recover/v1/illust/{pid}`（`internal/recover/routes.go` + `service.go`；auth 鉴权 + 写限流 60/min burst 10 key=accountID）：pid 纯数字校验否则 400；命中 200 `{status:"ready",pages,source,meta}`；未命中入队 202 `{status:"fetching",retryAfterSec:5}`；负缓存/全失败 404 `{status:"not_found"}`（自定义体，非错误信封）；`pages[].url` 按请求推导基址（r.Host + scheme）包装为 `{base}/img/v1/fetch?url=<源URL>`（§8.1）
+- [x] 异步队列 `queue.go`：goroutine + 带缓冲 channel 信号量，全局并发 ≤ 8、每源 ≤ 2、单源探测间隔 ≥ 1 s（`x/time/rate` 每源限速器，burst 1）；同 (account,pid) 在途去重只入队一次；并发/间隔/TTL 参数全部可注入
+- [x] 数据源插件 `sources/`（`Build` 按 `RECOVER_SOURCES` 顺序组装，条目支持 `name=host` 覆盖镜像域名；未知源 log warn 跳过）：
+  - `snapshot.go`：读本账号 bookmark_snapshot 域该 pid 的 `imageUrls`，逐 URL HEAD（405/501 退化 GET Range bytes=0-0）探测存活，存活页拉回落盘；出网带 Pixiv 风格 Referer；meta 透传快照字段（剔除 imageUrls）
+  - `mirror.go`：`<pid>.jpg` 首页 + `<pid>_p<N>.jpg` 递增探测，连续 2 个 404 或 50 页上限停止；内容校验 Content-Type 须 image/* 且 > 1 KB；尺寸用 `image.DecodeConfig` 尽力解码（jpeg/png/gif）
+  - 源域名启动校验：镜像 host 不在 `IMG_EXTRA_HOSTS` 则 log warn（客户端走 /img/v1/fetch 会 403，§6.2）
+- [x] 抓取成功 → 图片先流式落 `RECOVER_TMP_DIR`（默认 `<DATA_DIR>/recover-tmp`，独立于缓存目录，HDD 分卷）校验后经 `cache.Put` 原子入 M4 缓存；出网复用 `relay.NewUpstreamClient`（UPSTREAM_PROXY 生效）；负缓存过期后允许重试
+- [x] 恢复产物按账号隔离（account_id），`RECOVER_SHARED=true` 放开共享（查询不限 account_id，ready 优先）；`/img` 磁盘缓存跨用户共享（§8.2 可见性分层）
+- [x] 验收：httptest mock 镜像源/pximg（Transport 白名单改写，未登记 host 直接报错，零真实外网）+ t.TempDir()：状态机 202→200（pages 包装 URL 走 img 端点 HIT 字节一致）、全失败 404 负缓存（期内不再抓取，镜像计数断言）、负缓存过期重试、快照源优先（source=snapshot 且镜像零触达）、单源探测间隔 ≥ 注入值与全局并发上限（注入小参数，原子计数器+时间戳断言）、pid 非数字 400 / 无鉴权 401、账号隔离与 RECOVER_SHARED 放开、同 pid 并发 3 请求只入队一次；`go vet`/`gofmt`/`go test ./...`（recover `-count=3`）/`CGO_ENABLED=0` 静态编译全过。**环境限制**：同 M4/M5，本机无 gcc，`-race` 以 `-count=3` 重复并发用例替代
 
 ---
 

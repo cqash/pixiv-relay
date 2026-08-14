@@ -22,7 +22,10 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	handler, err := New(&config.Config{CacheDir: filepath.Join(t.TempDir(), "cache")}, database)
+	handler, err := New(&config.Config{
+		CacheDir:      filepath.Join(t.TempDir(), "cache"),
+		RecoverTmpDir: filepath.Join(t.TempDir(), "recover-tmp"),
+	}, database)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
