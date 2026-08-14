@@ -45,6 +45,20 @@ type Config struct {
 	RecoverNegativeTTLDays int
 	RecoverShared          bool
 	RecoverTmpDir          string
+
+	// Web 托管（§6.5）。WebDir 非空时从磁盘目录服务 SPA（前端开发期用），
+	// 空 = embed 内嵌产物；CORSOrigins 跨域白名单，空 = 完全关闭跨域（同源部署无需）。
+	WebDir      string
+	CORSOrigins []string
+
+	// DataEncKey 同步/恢复数据静态加密密钥（§9，AES-256-GCM，base64 编码 32 字节）。
+	// 空 = 不加密（向后兼容存量明文）；格式错误启动直接报错（internal/crypto.Load）。
+	DataEncKey string
+
+	// 限流配额（§9，次/分钟；注册端点为次/小时）。<= 0 取默认值。
+	RateWritePerMin     float64 // 写端点（relay/sync/recover），默认 60
+	RateImgPerMin       float64 // 图片端点，默认 300
+	RateRegisterPerHour float64 // 注册端点（按 IP），默认 10
 }
 
 // Load 读取环境变量并应用默认值。
@@ -94,7 +108,23 @@ func Load() *Config {
 		RecoverNegativeTTLDays: envInt("RECOVER_NEGATIVE_TTL_DAYS", 7),
 		RecoverShared:          envBool("RECOVER_SHARED"),
 		RecoverTmpDir:          recoverTmpDir,
+
+		WebDir:      strings.TrimSpace(os.Getenv("WEB_DIR")),
+		CORSOrigins: splitCSV(os.Getenv("CORS_ORIGINS")),
+		DataEncKey:  strings.TrimSpace(os.Getenv("DATA_ENC_KEY")),
+
+		RateWritePerMin:     envFloatDef("RATE_WRITE_PER_MIN", 60),
+		RateImgPerMin:       envFloatDef("RATE_IMG_PER_MIN", 300),
+		RateRegisterPerHour: envFloatDef("RATE_REGISTER_PER_HOUR", 10),
 	}
+}
+
+// envFloatDef 解析正浮点配额环境变量，缺失/非法/<=0 时返回 def（防误配置锁死端点）。
+func envFloatDef(name string, def float64) float64 {
+	if v := envFloat(name, 0); v > 0 {
+		return v
+	}
+	return def
 }
 
 // envBool 解析布尔环境变量（1/true/yes 为真，其余为假）。

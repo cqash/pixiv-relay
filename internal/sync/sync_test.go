@@ -9,18 +9,26 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	stdsync "sync"
 	"testing"
 	"time"
 
 	"github.com/arkpix/relay/internal/auth"
 	"github.com/arkpix/relay/internal/common"
+	"github.com/arkpix/relay/internal/crypto"
 	"github.com/arkpix/relay/internal/db"
 )
 
 // setup 构建测试环境：临时库（t.TempDir）+ auth 路由 + sync 路由（挂鉴权）。
 // 外层包 RequestID 使错误响应带 requestId。
 func setup(t *testing.T) (http.Handler, *sql.DB, *Service) {
+	t.Helper()
+	return setupWithEnc(t, nil)
+}
+
+// setupWithEnc 同 setup，但注入数据静态加密器（M7，§9）。
+func setupWithEnc(t *testing.T, enc *crypto.Cipher) (http.Handler, *sql.DB, *Service) {
 	t.Helper()
 	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -31,7 +39,7 @@ func setup(t *testing.T) (http.Handler, *sql.DB, *Service) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	svc, err := NewService(context.Background(), database)
+	svc, err := NewService(context.Background(), database, enc)
 	if err != nil {
 		t.Fatalf("new sync service: %v", err)
 	}
@@ -512,5 +520,98 @@ func TestUnauthorized(t *testing.T) {
 	rec = doJSON(t, h, http.MethodGet, "/sync/v1/pull?domain=history", nil, "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("pull without auth want 401, got %d", rec.Code)
+	}
+}
+
+// testCipher 构造测试用静态加密器（固定 32 字节密钥）。
+func testCipher(t *testing.T) *crypto.Cipher {
+	t.Helper()
+	enc, err := crypto.Load("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	if err != nil {
+		t.Fatalf("load test key: %v", err)
+	}
+	return enc
+}
+
+// TestEncryptedAtRest 开启 DATA_ENC_KEY 后：push 落库为 enc:v1: 密文，pull 还原一致。
+func TestEncryptedAtRest(t *testing.T) {
+	h, database, _ := setupWithEnc(t, testCipher(t))
+	tok, _ := registerDevice(t, h, "")
+
+	pushOK(t, h, tok, "history", "", []map[string]any{
+		item("1001", map[string]any{"title": "秘密标题", "viewed_at": 1}, 1000, false),
+	})
+
+	// 直接查库：data 必须是 enc:v1: 前缀密文，且不含明文。
+	var stored string
+	if err := database.QueryRow(
+		`SELECT data FROM sync_entries WHERE domain = 'history' AND "key" = '1001'`).Scan(&stored); err != nil {
+		t.Fatalf("query raw entry: %v", err)
+	}
+	if !strings.HasPrefix(stored, crypto.Prefix) {
+		t.Fatalf("stored data must carry %q prefix, got %q", crypto.Prefix, stored)
+	}
+	if strings.Contains(stored, "秘密标题") {
+		t.Fatal("stored ciphertext leaks plaintext")
+	}
+
+	// pull 读出还原一致。
+	pull := pullOK(t, h, tok, "history", "", 100)
+	got := findItem(t, pullItems(t, pull), "1001")
+	if got == nil {
+		t.Fatal("pulled items missing key 1001")
+	}
+	data := got["data"].(map[string]any)
+	if data["title"] != "秘密标题" {
+		t.Fatalf("decrypted data mismatch: %v", data)
+	}
+}
+
+// TestMixedPlaintextReadable 混存兼容：库里存量明文（加密开启前写入）仍可正确读出。
+func TestMixedPlaintextReadable(t *testing.T) {
+	h, database, _ := setupWithEnc(t, testCipher(t))
+	tok, _ := registerDevice(t, h, "")
+
+	// 模拟存量明文：绕过 service 直插明文行。
+	var accountID int64
+	if err := database.QueryRow(`SELECT id FROM accounts LIMIT 1`).Scan(&accountID); err != nil {
+		t.Fatalf("query account: %v", err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO sync_entries (account_id, domain, "key", data, updated_at, deleted, seq)
+		 VALUES (?, 'history', '9001', ?, 999, 0, 1)`,
+		accountID, `{"title":"legacy","viewed_at":9}`); err != nil {
+		t.Fatalf("insert plaintext row: %v", err)
+	}
+
+	pull := pullOK(t, h, tok, "history", "", 100)
+	got := findItem(t, pullItems(t, pull), "9001")
+	if got == nil {
+		t.Fatal("pulled items missing legacy plaintext key 9001")
+	}
+	if got["data"].(map[string]any)["title"] != "legacy" {
+		t.Fatalf("legacy plaintext mismatch: %v", got["data"])
+	}
+}
+
+// TestEncryptedWithoutKeyErrors 数据已加密但服务未配密钥：pull 必须报错（500），
+// 绝不静默返回密文。
+func TestEncryptedWithoutKeyErrors(t *testing.T) {
+	h, database, _ := setup(t) // 未启用加密
+	tok, _ := registerDevice(t, h, "")
+	enc := testCipher(t)
+	var accountID int64
+	if err := database.QueryRow(`SELECT id FROM accounts LIMIT 1`).Scan(&accountID); err != nil {
+		t.Fatalf("query account: %v", err)
+	}
+	if _, err := database.Exec(
+		`INSERT INTO sync_entries (account_id, domain, "key", data, updated_at, deleted, seq)
+		 VALUES (?, 'history', '8001', ?, 999, 0, 1)`,
+		accountID, enc.Encrypt(`{"title":"x"}`)); err != nil {
+		t.Fatalf("insert encrypted row: %v", err)
+	}
+	rec := doJSON(t, h, http.MethodGet, "/sync/v1/pull?domain=history", nil, tok)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("pull encrypted data without key want 500, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arkpix/relay/internal/common"
+	"github.com/arkpix/relay/internal/crypto"
 )
 
 // tombstoneRetentionMs 墓碑保留期（§7.2：90 天）。超过后墓碑可清理、
@@ -24,12 +25,14 @@ const maxPushItems = 500
 type Service struct {
 	db     *sql.DB
 	tokens *TokenStore
-	now    func() int64 // 可注入时间源（测试用）
+	enc    *crypto.Cipher // 静态加密（§9）；nil = 不加密
+	now    func() int64   // 可注入时间源（测试用）
 	pushMu stdsync.Mutex
 }
 
-// NewService 创建同步服务并恢复各域 token 游标。
-func NewService(ctx context.Context, db *sql.DB) (*Service, error) {
+// NewService 创建同步服务并恢复各域 token 游标。enc 为数据静态加密器（§9，
+// AES-256-GCM，nil 不加密）；存量明文与加密新数据可混存（按 enc:v1: 前缀区分）。
+func NewService(ctx context.Context, db *sql.DB, enc *crypto.Cipher) (*Service, error) {
 	ts := NewTokenStore()
 	if err := ts.Load(ctx, db); err != nil {
 		return nil, err
@@ -37,11 +40,12 @@ func NewService(ctx context.Context, db *sql.DB) (*Service, error) {
 	return &Service{
 		db:     db,
 		tokens: ts,
+		enc:    enc,
 		now:    func() int64 { return time.Now().UnixMilli() },
 	}, nil
 }
 
-// PushItem push 条目。data 存原始 JSON 文本（M7 才做静态加密）。
+// PushItem push 条目。data 落库前经 enc 加密（启用时），库内为密文文本。
 type PushItem struct {
 	Key       string          `json:"key"`
 	Data      json.RawMessage `json:"data"`
@@ -144,7 +148,7 @@ func (s *Service) Push(ctx context.Context, accountID int64, req *PushRequest) (
 		if _, err := tx.ExecContext(ctx,
 			`INSERT OR REPLACE INTO sync_entries (account_id, domain, "key", data, updated_at, deleted, seq)
 			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			accountID, req.Domain, it.Key, string(it.Data), it.UpdatedAt, del, seqBase+int64(i)); err != nil {
+			accountID, req.Domain, it.Key, s.enc.Encrypt(string(it.Data)), it.UpdatedAt, del, seqBase+int64(i)); err != nil {
 			return nil, fmt.Errorf("upsert sync entry: %w", err)
 		}
 	}
@@ -210,7 +214,11 @@ func (s *Service) Pull(ctx context.Context, accountID int64, domain, since strin
 		if err := rows.Scan(&it.Key, &data, &it.UpdatedAt, &del, &seq); err != nil {
 			return nil, fmt.Errorf("scan sync entry: %w", err)
 		}
-		it.Data = json.RawMessage(data)
+		plain, err := s.enc.Decrypt(data) // 密文按 enc:v1: 前缀解密，明文原样（§9 混存兼容）
+		if err != nil {
+			return nil, fmt.Errorf("decrypt sync entry: %w", err)
+		}
+		it.Data = json.RawMessage(plain)
 		it.Deleted = del != 0
 		items = append(items, it)
 		seqs = append(seqs, seq)

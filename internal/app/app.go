@@ -4,26 +4,35 @@ package app
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/arkpix/relay/internal/auth"
 	"github.com/arkpix/relay/internal/cache"
 	"github.com/arkpix/relay/internal/common"
 	"github.com/arkpix/relay/internal/config"
+	"github.com/arkpix/relay/internal/crypto"
 	"github.com/arkpix/relay/internal/img"
 	"github.com/arkpix/relay/internal/recover"
 	"github.com/arkpix/relay/internal/relay"
 	syncsvc "github.com/arkpix/relay/internal/sync"
+	"github.com/arkpix/relay/internal/web"
 )
 
-// New 构建 HTTP 处理器。中间件链：RequestID → AccessLog → mux。
-// 路由按里程碑逐步挂载（M2 auth / M3 relay / M4 img / M5 sync / M6 recover）。
+// New 构建 HTTP 处理器。中间件链：RequestID → AccessLog → CORS（按白名单，默认关）→ mux。
+// mux 兜底挂载 SPA 静态托管（§6.5，GET / 与前端路由 fallback）。
+// DATA_ENC_KEY 格式错误在此直接报错（调用方启动失败退出，§9）。
 func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 
+	enc, err := crypto.Load(cfg.DataEncKey)
+	if err != nil {
+		return nil, fmt.Errorf("load data encryption key: %w", err)
+	}
+
 	authSvc := auth.NewService(db, cfg.InviteCodes)
-	auth.RegisterRoutes(mux, authSvc)
+	auth.RegisterRoutes(mux, authSvc, cfg.RateRegisterPerHour)
 	authMw, err := auth.NewMiddleware(db, cfg.StaticTokens)
 	if err != nil {
 		return nil, err
@@ -33,7 +42,7 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	relay.RegisterRoutes(mux, relay.NewService(upstream, cfg.RelayExtraHosts), authMw)
+	relay.RegisterRoutes(mux, relay.NewService(upstream, cfg.RelayExtraHosts), authMw, cfg.RateWritePerMin)
 
 	imgCache, err := cache.Open(db, cache.Config{
 		Dir:           cfg.CacheDir,
@@ -46,13 +55,13 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	img.RegisterRoutes(mux, img.NewService(upstream, imgCache, cfg.ImgExtraHosts), authMw)
+	img.RegisterRoutes(mux, img.NewService(upstream, imgCache, cfg.ImgExtraHosts), authMw, cfg.RateImgPerMin)
 
-	syncSvc, err := syncsvc.NewService(context.Background(), db)
+	syncSvc, err := syncsvc.NewService(context.Background(), db, enc)
 	if err != nil {
 		return nil, err
 	}
-	syncsvc.RegisterRoutes(mux, syncSvc, authMw)
+	syncsvc.RegisterRoutes(mux, syncSvc, authMw, cfg.RateWritePerMin)
 
 	recoverSvc, err := recover.NewService(db, imgCache, upstream, recover.Config{
 		Sources:         cfg.RecoverSources,
@@ -61,13 +70,23 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 		Shared:          cfg.RecoverShared,
 		TmpDir:          cfg.RecoverTmpDir,
 		ImgExtraHosts:   cfg.ImgExtraHosts,
+		RatePerMin:      cfg.RateWritePerMin,
+		Enc:             enc,
 	})
 	if err != nil {
 		return nil, err
 	}
 	recover.RegisterRoutes(mux, recoverSvc, authMw)
 
-	return common.RequestID(common.AccessLog(mux)), nil
+	// Web 前端静态托管（§6.5）：兜底匹配所有未被 API 命中的 GET 路径，
+	// 前端路由 fallback 到 index.html。
+	spa, err := web.SPAHandler(cfg.WebDir)
+	if err != nil {
+		return nil, fmt.Errorf("web static dir: %w", err)
+	}
+	mux.Handle("GET /", spa)
+
+	return common.RequestID(common.AccessLog(web.CORS(cfg.CORSOrigins, mux))), nil
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {

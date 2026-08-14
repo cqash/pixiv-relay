@@ -1,0 +1,20 @@
+# ArkPix Relay Server 单容器编排（PLAN M7）。
+# 用法：在仓库根目录放 .env（参照 .env.example），然后：
+#   docker compose -f docker/docker-compose.yml up -d
+# 注意：bind 卷 ./data 属主需可被容器内 nonroot（uid 65532）写入，
+# 或改用 named volume（volumes: data:/data）。
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: arkpix-relay:latest
+    container_name: arkpix-relay
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    env_file:
+      - path: ../.env
+        required: false # 无 .env 时用默认配置（DATA_DIR=/data 由镜像 ENV 提供）
+    restart: unless-stopped

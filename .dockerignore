@@ -1,0 +1,14 @@
+# 版本控制与本地环境
+.git
+.github
+.toolchain
+.env
+
+# 构建产物与运行数据
+bin
+data
+docker
+
+# 文档不参与构建
+docs
+*.md

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arkpix/relay/internal/crypto"
 	"github.com/arkpix/relay/internal/recover/sources"
 	syncsvc "github.com/arkpix/relay/internal/sync"
 )
@@ -35,13 +36,14 @@ type Queue struct {
 	sem   chan struct{}
 	ttlMs int64
 	negMs int64
+	enc   *crypto.Cipher // 静态加密（§9）；nil = 不加密
 	now   func() int64
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
 }
 
-func newQueue(db *sql.DB, srcs []sources.Source, globalConcurrent int, ttlMs, negMs int64) *Queue {
+func newQueue(db *sql.DB, srcs []sources.Source, globalConcurrent int, ttlMs, negMs int64, enc *crypto.Cipher) *Queue {
 	if globalConcurrent <= 0 {
 		globalConcurrent = DefaultGlobalConcurrent
 	}
@@ -51,6 +53,7 @@ func newQueue(db *sql.DB, srcs []sources.Source, globalConcurrent int, ttlMs, ne
 		sem:      make(chan struct{}, globalConcurrent),
 		ttlMs:    ttlMs,
 		negMs:    negMs,
+		enc:      enc,
 		now:      func() int64 { return time.Now().UnixMilli() },
 		inflight: make(map[string]struct{}),
 	}
@@ -123,6 +126,11 @@ func (q *Queue) loadSnapshot(ctx context.Context, accountID int64, pid string) *
 	if err != nil {
 		return nil
 	}
+	// 静态加密（§9）：密文按前缀解密，存量明文原样；解密失败按无快照处理。
+	if data, err = q.enc.Decrypt(data); err != nil {
+		slog.Warn("recover snapshot decrypt failed", "err", err)
+		return nil
+	}
 	var obj map[string]any
 	if err := json.Unmarshal([]byte(data), &obj); err != nil {
 		return nil
@@ -180,7 +188,8 @@ func (q *Queue) writeResult(accountID int64, pid string, pages []sources.Page, s
 		 ON CONFLICT(account_id, pid) DO UPDATE SET
 		   pages = excluded.pages, source = excluded.source, meta = excluded.meta,
 		   status = 'ready', expire = excluded.expire`,
-		accountID, pid, string(pagesJSON), source, string(metaJSON), expire)
+		// 静态加密（§9）：pages/meta 同属用户数据，落库前加密。
+		accountID, pid, q.enc.Encrypt(string(pagesJSON)), source, q.enc.Encrypt(string(metaJSON)), expire)
 	return err
 }
 

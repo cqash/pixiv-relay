@@ -40,8 +40,11 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	})
 }
 
+// writeRaw 统一 JSON 输出。nosniff + no-store：API 响应含用户数据，禁止中间缓存（§9）。
 func writeRaw(w http.ResponseWriter, status int, body map[string]any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }

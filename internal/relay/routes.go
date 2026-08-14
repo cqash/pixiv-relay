@@ -9,9 +9,13 @@ import (
 )
 
 // RegisterRoutes 挂载 POST /relay/v1/request（§6.1）。
-// 链：auth 鉴权 → 写端点限流 60/min（burst 10，key = accountID，§9）→ handler。
-func RegisterRoutes(mux *http.ServeMux, svc *Service, mw *auth.Middleware) {
-	limiter := common.NewLimiter(60, 10)
+// 链：auth 鉴权 → 写端点限流（默认 60/min，burst 10，key = accountID，§9；writePerMin 可覆盖）→ handler。
+func RegisterRoutes(mux *http.ServeMux, svc *Service, mw *auth.Middleware, writePerMin ...float64) {
+	perMin := 60.0
+	if len(writePerMin) > 0 && writePerMin[0] > 0 {
+		perMin = writePerMin[0]
+	}
+	limiter := common.NewLimiter(perMin, 10)
 	mux.Handle("POST /relay/v1/request",
 		mw.Wrap(limiter.Middleware(accountKey)(http.HandlerFunc(makeHandler(svc)))))
 }

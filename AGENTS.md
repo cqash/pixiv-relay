@@ -25,8 +25,10 @@ internal/
   auth/ relay/ img/    # 各模块 routes + service（M2–M4）
   cache/disklru.go     # 磁盘 LRU 缓存（M4）
   sync/ recover/       # 同步域与恢复队列（M5–M6）
+  crypto/              # 用户数据静态加密（M7，AES-256-GCM，enc:v1: 前缀混存兼容）
   storage/repository.go # 仓储接口（SQLite 实现，预留 Postgres）
-  web/embed.go         # go:embed SPA 静态资源（M7；dist/ 由独立前端工程产出，不入库）
+  web/embed.go         # go:embed SPA 静态资源（M7；dist/ 由独立前端工程产出，仅占位 index.html 入库）
+  web/spa.go cors.go   # SPA 托管（WEB_DIR 磁盘模式可切）与 CORS_ORIGINS 白名单（M7）
 docker/                # Dockerfile（multi-stage → scratch/distroless）+ compose（M7）
 ```
 
@@ -36,6 +38,7 @@ docker/                # Dockerfile（multi-stage → scratch/distroless）+ com
 - **机械硬盘策略（§6.4，贯穿始终）**：DB 不存图片 blob；图片写 = 同卷临时文件 + `os.Rename` 原子落盘，读 = `io.Copy` 流式；缓存 `CACHE_LAYOUT=sharded` 两级分目录；LRU 元数据存 DB、淘汰水位触发且批量限速；`io.ReadAll` 仅限 ≤1MB 的 API body
 - **协议面**：错误统一 `{error:{code,message,requestId}}`；列表端点游标分页 `{items,nextCursor}`；同步 token 按（账号 × domain）单调递增；日志绝不落 `authorization`/body（slog 脱敏 Handler）
 - **认证**：服务端账号体系与 Pixiv 解耦，`accountKey` 加入已有账号（只存哈希）；公网部署必须 `INVITE_CODES` 或 `STATIC_TOKENS`
+- **静态加密（§9，M7）**：`DATA_ENC_KEY`（base64 32B）开启后 `sync_entries.data` 与 `recover_cache` 的 pages/meta 落库前 AES-256-GCM 加密；密文带 `enc:v1:` 前缀，与存量明文混存兼容；空 = 不加密；密钥格式错误启动直接退出
 - 测试用 `net/http/httptest`，集成测试一律临时目录，不碰真实 `data/`
 
 ## 关联工程

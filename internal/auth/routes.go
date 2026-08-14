@@ -31,9 +31,14 @@ type tokenResponse struct {
 }
 
 // RegisterRoutes 挂载 /auth/v1 路由（§13）。
-// register 端点独立限流 10 次/小时/IP（§9 防批量注册），refresh 走认证用户通用配额（M3+ 挂载）。
-func RegisterRoutes(mux *http.ServeMux, svc *Service) {
-	limiter := common.NewLimiter(10.0/60, 3)
+// register 端点独立限流（默认 10 次/小时/IP，§9 防批量注册；registerPerHour 可覆盖），
+// refresh 走认证用户通用配额（M3+ 挂载）。
+func RegisterRoutes(mux *http.ServeMux, svc *Service, registerPerHour ...float64) {
+	perHour := 10.0
+	if len(registerPerHour) > 0 && registerPerHour[0] > 0 {
+		perHour = registerPerHour[0]
+	}
+	limiter := common.NewLimiter(perHour/60, 3)
 	mux.Handle("POST /auth/v1/register",
 		limiter.Middleware(common.ClientIP)(http.HandlerFunc(makeRegisterHandler(svc))))
 	mux.HandleFunc("POST /auth/v1/refresh", makeRefreshHandler(svc))

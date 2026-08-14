@@ -11,5 +11,6 @@ bin/
 # 运行数据（DB / 图片缓存 / 恢复临时文件）
 data/
 
-# Web 前端构建产物（独立工程产出，构建时拷入）
+# Web 前端构建产物（独立工程产出，构建时拷入；保留占位 index.html 供 go:embed 编译）
 internal/web/dist/
+!internal/web/dist/index.html

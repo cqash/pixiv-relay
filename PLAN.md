@@ -199,11 +199,12 @@ pix_backend/
 
 ## 10. M7 部署形态（§10）
 
-- [ ] 环境变量全集（`.env.example`）：端口、DB 路径、缓存目录/上限、`CACHE_LAYOUT`、`CACHE_TMP_DIR`、`CACHE_HIGH_WATERMARK`、`CACHE_EVICTION_BATCH`、INVITE_CODES、STATIC_TOKENS、UPSTREAM_PROXY、限流参数、恢复源列表/优先级、TTL、CORS_ORIGINS、WEB_DIR（Web 前端静态资源目录，默认使用 `embed.FS` 内嵌产物）
-- [ ] `docker/Dockerfile`（multi-stage：`golang` 构建 `CGO_ENABLED=0` 静态二进制 → `scratch`/`distroless` 运行镜像 ~20 MB）+ `docker-compose.yml`（单容器，卷挂 DB+缓存）
-- [ ] Web 前端静态托管（§6.5）：`internal/web/embed.go` 用 `go:embed` 内嵌 SPA，同源托管；`CORS_ORIGINS` 白名单默认关闭；Web 前端为独立工程，不在本仓库
-- [ ] 服务端静态加密同步数据（AES-256-GCM，密钥 `DATA_ENC_KEY` 由部署方管理，§9）——DB 落盘前加密敏感列
-- [ ] 文档 `docs/api.md`：端点汇总（对齐 §13）
+- [x] 环境变量全集（`.env.example`）：端口、DB 路径、缓存目录/上限、`CACHE_LAYOUT`、`CACHE_TMP_DIR`、`CACHE_HIGH_WATERMARK`、`CACHE_EVICTION_BATCH`、INVITE_CODES、STATIC_TOKENS、UPSTREAM_PROXY、限流参数、恢复源列表/优先级、TTL、CORS_ORIGINS、WEB_DIR（Web 前端静态资源目录，默认使用 `embed.FS` 内嵌产物）、DATA_ENC_KEY。**实现说明**：config 新增 `CORSOrigins/WebDir/DataEncKey` + 限流三件套 `RATE_WRITE_PER_MIN`（默认 60，relay/sync/recover 写端点共用）/`RATE_IMG_PER_MIN`（默认 300）/`RATE_REGISTER_PER_HOUR`（默认 10），<=0 或非法回退默认；路由 `RegisterRoutes` 以可选变参接收配额，既有测试调用零改动
+- [x] `docker/Dockerfile`（multi-stage：`golang:1.26-alpine` 构建 `CGO_ENABLED=0 -trimpath -ldflags="-s -w"` 静态二进制 → `gcr.io/distroless/static-debian12:nonroot` 运行；EXPOSE 8080、VOLUME /data、ENV DATA_DIR=/data、/data 预建并 chown 65532 保证 nonroot 可写 named volume）+ `docker-compose.yml`（单容器，`./data:/data` bind 卷、8080 端口、`env_file: ../.env`（required:false）、restart unless-stopped）+ 根 `.dockerignore`（.toolchain/bin/data/.git 等；**注意** dist 需保留在构建上下文供 go:embed）
+- [x] Web 前端静态托管（§6.5）：`internal/web/embed.go` `go:embed dist` 内嵌 SPA（仓库内为占位 `dist/index.html`，`.gitignore` 加 `!internal/web/dist/index.html` 例外）；`spa.go` 兜底 `GET /`：命中静态资源按扩展名 Content-Type（内置表兜底 Windows mime 注册表缺项）+ `Cache-Control: public, max-age=86400`，未命中 fallback index.html（`no-cache`），`X-Content-Type-Options: nosniff`；`WEB_DIR` 非空改从磁盘服务（前端开发期）；`cors.go` `CORS_ORIGINS` 白名单中间件：空 = 完全关闭；仅白名单 Origin 在 API 路径（/auth//relay//img//sync//recover//healthz）回显 ACAO + preflight 204（允许 `Authorization, Content-Type`，Max-Age 86400）；API 响应统一 `Cache-Control: no-store` + nosniff（common.writeRaw）
+- [x] 服务端静态加密同步数据（§9）：`internal/crypto`（AES-256-GCM，nonce crypto/rand，密文 = `enc:v1:` + base64(nonce+ciphertext)）；`DATA_ENC_KEY` 空 = 不加密（nil *Cipher 全链路透传），格式错误（base64 失败/非 32 字节）app.New 报错启动退出；读出按前缀区分密文/存量明文混存兼容，密文无密钥读出报错不静默；接入点：sync.Push 落库前加密 / Pull 读出解密（service.go 各一行），recover_queue loadSnapshot（读 sync_entries 密文快照）/ writeResult（pages/meta 落库加密）+ service.lookup 读出解密
+- [x] 文档 `docs/api.md`：端点汇总（对齐 §13，逐端点方法/鉴权/请求体/响应体/错误码 + 通用约定/Web 托管/CORS）
+- [x] 验收：web 托管（GET /、/settings fallback、/healthz 不拦截、WEB_DIR 磁盘模式、.js/.html Content-Type、缓存头）、CORS（白名单 preflight 204 回显/非白名单不回显/空配置无头/静态路径不挂 CORS）、加密（sync push→DB 断言 `enc:v1:` 前缀→pull 还原一致、手工明文行混存读出、密文无密钥 500、recover 密文快照读取 + pages/meta 密文落库断言、坏密钥 app.New 报错）、config 默认值/解析单测；`go vet`/`gofmt`/`go test ./... -count=1`/`CGO_ENABLED=0` 静态编译全过；PORT=18087 冒烟（/ 占位页 no-cache、/healthz no-store、/settings fallback、坏密钥启动报错退出）✓。**环境限制**：本机 Docker daemon 未运行，镜像未实际构建，Dockerfile 仅静态审查
 
 ---
 

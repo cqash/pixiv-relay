@@ -16,6 +16,7 @@ import (
 	"github.com/arkpix/relay/internal/auth"
 	"github.com/arkpix/relay/internal/cache"
 	"github.com/arkpix/relay/internal/common"
+	"github.com/arkpix/relay/internal/crypto"
 	"github.com/arkpix/relay/internal/recover/sources"
 )
 
@@ -44,6 +45,10 @@ type Config struct {
 	SourceMaxConcurrent int           // 每源并发上限（默认 2）
 	GlobalConcurrent    int           // 全局抓取并发上限（默认 8）
 	RatePerMin          float64       // 端点限流（默认 60/min，burst 10）
+
+	// Enc 用户数据静态加密器（§9，与 sync 共用 DATA_ENC_KEY；nil = 不加密）。
+	// recover_cache 的 pages/meta 同属用户数据，与存量明文按前缀混存兼容。
+	Enc *crypto.Cipher
 }
 
 // Service 恢复服务：查询状态机 + 异步队列。
@@ -51,6 +56,7 @@ type Service struct {
 	db      *sql.DB
 	queue   *Queue
 	shared  bool
+	enc     *crypto.Cipher
 	limiter *common.Limiter
 	now     func() int64
 }
@@ -93,8 +99,9 @@ func NewService(db *sql.DB, c *cache.DiskLRU, client *http.Client, cfg Config) (
 
 	return &Service{
 		db:      db,
-		queue:   newQueue(db, srcs, cfg.GlobalConcurrent, int64(cfg.TTLDays)*dayMs, int64(cfg.NegativeTTLDays)*dayMs),
+		queue:   newQueue(db, srcs, cfg.GlobalConcurrent, int64(cfg.TTLDays)*dayMs, int64(cfg.NegativeTTLDays)*dayMs, cfg.Enc),
 		shared:  cfg.Shared,
+		enc:     cfg.Enc,
 		limiter: common.NewLimiter(cfg.RatePerMin, defaultRateBurst),
 		now:     func() int64 { return time.Now().UnixMilli() },
 	}, nil
@@ -177,6 +184,14 @@ func (s *Service) lookup(ctx context.Context, accountID int64, pid string) (*cac
 	}
 	if err != nil {
 		return nil, fmt.Errorf("recover: lookup: %w", err)
+	}
+	// 静态加密（§9）：pages/meta 密文按 enc:v1: 前缀解密，存量明文原样。
+	pagesJSON, err = s.enc.Decrypt(pagesJSON)
+	if err != nil {
+		return nil, fmt.Errorf("recover: decrypt pages: %w", err)
+	}
+	if metaJSON, err = s.enc.Decrypt(metaJSON); err != nil {
+		return nil, fmt.Errorf("recover: decrypt meta: %w", err)
 	}
 	if err := json.Unmarshal([]byte(pagesJSON), &out.pages); err != nil {
 		return nil, fmt.Errorf("recover: parse pages: %w", err)

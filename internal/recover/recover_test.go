@@ -22,6 +22,7 @@ import (
 	"github.com/arkpix/relay/internal/auth"
 	"github.com/arkpix/relay/internal/cache"
 	"github.com/arkpix/relay/internal/common"
+	"github.com/arkpix/relay/internal/crypto"
 	"github.com/arkpix/relay/internal/db"
 	"github.com/arkpix/relay/internal/img"
 )
@@ -539,5 +540,61 @@ func TestQueueDedup(t *testing.T) {
 	waitStatus(t, e.h, tokenA, "646464", http.StatusOK)
 	if got := e.mirror.pathHits("/646464.jpg"); got != 1 {
 		t.Fatalf("mirror /646464.jpg hits = %d, want 1 (queue dedup)", got)
+	}
+}
+
+// TestEncryptedAtRest 开启数据静态加密（M7，§9）：快照源的 sync_entries 密文可解密读取，
+// 恢复产物 pages/meta 落库为 enc:v1: 密文，查询读出还原一致。
+func TestEncryptedAtRest(t *testing.T) {
+	jpg := makeJPEG(t, 64, 48)
+	enc, err := crypto.Load("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	if err != nil {
+		t.Fatalf("load test key: %v", err)
+	}
+	e := setup(t, Config{ProbeEvery: time.Millisecond, Enc: enc},
+		serve404, servePages(map[string][]byte{
+			"/img-original/img/x/777_p0.jpg": jpg,
+		}), 0)
+
+	var accountID int64
+	if err := e.db.QueryRow("SELECT account_id FROM devices WHERE access_token_hash = ?",
+		auth.HashToken(tokenA)).Scan(&accountID); err != nil {
+		t.Fatalf("lookup account: %v", err)
+	}
+	// 快照以密文形式入库（模拟 sync 加密开启后的写入形态）。
+	data := `{"illustId":777,"title":"密","userName":"U","width":64,"height":48,` +
+		`"imageUrls":["https://i.pximg.net/img-original/img/x/777_p0.jpg"]}`
+	if _, err := e.db.Exec(
+		`INSERT INTO sync_entries (account_id, domain, "key", data, updated_at, deleted, seq)
+		 VALUES (?, 'bookmark_snapshot', '777', ?, ?, 0, 1)`,
+		accountID, enc.Encrypt(data), time.Now().UnixMilli()); err != nil {
+		t.Fatalf("insert encrypted snapshot: %v", err)
+	}
+
+	doGet(t, e.h, tokenA, "777")
+	body := waitStatus(t, e.h, tokenA, "777", http.StatusOK)
+	if body["source"] != "snapshot" {
+		t.Fatalf("source = %v, want snapshot（密文快照应能解密读取）", body["source"])
+	}
+	if meta := body["meta"].(map[string]any); meta["title"] != "密" {
+		t.Fatalf("meta = %v, want decrypted title", meta)
+	}
+	if pages := body["pages"].([]any); len(pages) != 1 {
+		t.Fatalf("pages = %v, want 1", pages)
+	}
+
+	// 直接查库：pages/meta 必须是 enc:v1: 密文且不含明文。
+	var pages, meta string
+	if err := e.db.QueryRow(
+		"SELECT pages, meta FROM recover_cache WHERE pid = '777'").Scan(&pages, &meta); err != nil {
+		t.Fatalf("query raw recover_cache: %v", err)
+	}
+	for _, v := range []string{pages, meta} {
+		if !strings.HasPrefix(v, crypto.Prefix) {
+			t.Fatalf("recover_cache column must carry %q prefix, got %q", crypto.Prefix, v)
+		}
+	}
+	if strings.Contains(pages, "777_p0") || strings.Contains(meta, "密") {
+		t.Fatal("recover_cache ciphertext leaks plaintext")
 	}
 }
