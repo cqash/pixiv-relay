@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,17 @@ type Config struct {
 	// UpstreamProxy 上游出口代理（§10），空 = 直连。
 	RelayExtraHosts []string
 	UpstreamProxy   string
+
+	// ImgExtraHosts /img 域名白名单追加项（§6.2，恢复模块第三方源在此声明）。
+	ImgExtraHosts []string
+
+	// 图片磁盘缓存（§6.4 HDD 策略）。CacheTmpDir 必须与 CacheDir 同卷（rename 原子落盘）。
+	CacheDir           string
+	CacheTmpDir        string
+	CacheMaxBytes      int64
+	CacheLayout        string
+	CacheHighWatermark float64
+	CacheEvictionBatch int
 }
 
 // Load 读取环境变量并应用默认值。
@@ -41,15 +53,47 @@ func Load() *Config {
 	if dbPath == "" {
 		dbPath = filepath.Join(dataDir, "relay.db")
 	}
-	return &Config{
-		Port:            port,
-		DataDir:         dataDir,
-		DBPath:          dbPath,
-		InviteCodes:     splitCSV(os.Getenv("INVITE_CODES")),
-		StaticTokens:    splitCSV(os.Getenv("STATIC_TOKENS")),
-		RelayExtraHosts: splitCSV(os.Getenv("RELAY_EXTRA_HOSTS")),
-		UpstreamProxy:   strings.TrimSpace(os.Getenv("UPSTREAM_PROXY")),
+	cacheDir := os.Getenv("CACHE_DIR")
+	if cacheDir == "" {
+		cacheDir = filepath.Join(dataDir, "cache")
 	}
+	return &Config{
+		Port:               port,
+		DataDir:            dataDir,
+		DBPath:             dbPath,
+		InviteCodes:        splitCSV(os.Getenv("INVITE_CODES")),
+		StaticTokens:       splitCSV(os.Getenv("STATIC_TOKENS")),
+		RelayExtraHosts:    splitCSV(os.Getenv("RELAY_EXTRA_HOSTS")),
+		UpstreamProxy:      strings.TrimSpace(os.Getenv("UPSTREAM_PROXY")),
+		ImgExtraHosts:      splitCSV(os.Getenv("IMG_EXTRA_HOSTS")),
+		CacheDir:           cacheDir,
+		CacheTmpDir:        os.Getenv("CACHE_TMP_DIR"), // 空 = <CACHE_DIR>/tmp（cache.Open 规范化）
+		CacheMaxBytes:      envInt64("CACHE_MAX_BYTES", 0),
+		CacheLayout:        os.Getenv("CACHE_LAYOUT"),
+		CacheHighWatermark: envFloat("CACHE_HIGH_WATERMARK", 0),
+		CacheEvictionBatch: envInt("CACHE_EVICTION_BATCH", 0),
+	}
+}
+
+// envInt64 解析整数环境变量，缺失或非法时返回 def。
+func envInt64(name string, def int64) int64 {
+	v, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(name)), 10, 64)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+func envInt(name string, def int) int {
+	return int(envInt64(name, int64(def)))
+}
+
+func envFloat(name string, def float64) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(name)), 64)
+	if err != nil {
+		return def
+	}
+	return v
 }
 
 // splitCSV 解析逗号分隔配置项，去除空白项。

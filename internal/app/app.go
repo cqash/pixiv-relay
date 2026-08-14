@@ -6,8 +6,10 @@ import (
 	"net/http"
 
 	"github.com/arkpix/relay/internal/auth"
+	"github.com/arkpix/relay/internal/cache"
 	"github.com/arkpix/relay/internal/common"
 	"github.com/arkpix/relay/internal/config"
+	"github.com/arkpix/relay/internal/img"
 	"github.com/arkpix/relay/internal/relay"
 )
 
@@ -29,6 +31,19 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 		return nil, err
 	}
 	relay.RegisterRoutes(mux, relay.NewService(upstream, cfg.RelayExtraHosts), authMw)
+
+	imgCache, err := cache.Open(db, cache.Config{
+		Dir:           cfg.CacheDir,
+		TmpDir:        cfg.CacheTmpDir,
+		MaxBytes:      cfg.CacheMaxBytes,
+		Layout:        cfg.CacheLayout,
+		HighWatermark: cfg.CacheHighWatermark,
+		EvictionBatch: cfg.CacheEvictionBatch,
+	})
+	if err != nil {
+		return nil, err
+	}
+	img.RegisterRoutes(mux, img.NewService(upstream, imgCache, cfg.ImgExtraHosts), authMw)
 
 	return common.RequestID(common.AccessLog(mux)), nil
 }

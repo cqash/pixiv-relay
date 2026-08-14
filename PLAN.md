@@ -149,17 +149,19 @@ pix_backend/
 
 ## 7. M4 图片中继 /img（§6.2）
 
-- [ ] `GET /img/v1/fetch?url=&disposition=`：
-  - 域名白名单：`i.pximg.net`、`i-f.pximg.net`、`s.pximg.net` + `IMG_EXTRA_HOSTS` 可配追加（§6.2，恢复模块源域名必须在此声明）
-  - 服务端注入 `Referer: https://app-api.pixiv.net/` + UA
-  - 响应透传 `Content-Type`、`Content-Length`、`Cache-Control`；加 `X-Upstream-Status`、`X-Cache: HIT/MISS`
-- [ ] 磁盘 LRU 缓存 `cache/disklru.go`（§6.4）：
-  - 键 = URL SHA-256；默认上限 20 GB 可配；`CACHE_LAYOUT=sharded` 两级分目录；元数据存 DB（size、atime、expire）
-  - 写：`CACHE_TMP_DIR`（同卷）临时文件流式下载（`io.Copy` 限速体）→ 校验大小（单图上限 50 MB）→ `os.Rename` 落盘
-  - 读：`os.Open` + `io.Copy` 管道直出（或 `http.ServeContent`），禁止整读
-  - 淘汰：LRU 按 DB 内 atime，启动 + `CACHE_HIGH_WATERMARK`（默认 90%）触发，`CACHE_EVICTION_BATCH` 批量限速删除
-- [ ] 失败映射：上游 404 → 404；超时 → 502；磁盘写满降级直连（不返回 507，§4.2）
-- [ ] 验收：HDD 上 `go test -bench` 压测缓存命中率与吞吐，确认无整读入内存、无随机 IO 热点
+- [x] `GET /img/v1/fetch?url=&disposition=`（`internal/img/routes.go` + `service.go`；挂 auth 鉴权中间件 + 图片限流 `common.NewLimiter(300, 30)`，key = accountID，§9）：
+  - 域名白名单：`i.pximg.net`、`i-f.pximg.net`、`s.pximg.net` + `IMG_EXTRA_HOSTS` 可配追加（§6.2，恢复模块源域名必须在此声明）；非白名单 403；强制 https（沿用 M3 收紧）
+  - 服务端注入 `Referer: https://app-api.pixiv.net/` + `User-Agent: PixivIOSApp/5.8.0`；出网 client 复用 `relay.NewUpstreamClient`（UPSTREAM_PROXY 生效）
+  - 响应透传 `Content-Type`、`Content-Length`、`Cache-Control`；加 `X-Upstream-Status`、`X-Cache: HIT/MISS`；`disposition=inline` 时设 `Content-Disposition: inline`
+- [x] 磁盘 LRU 缓存 `internal/cache/disklru.go`（§6.4）：
+  - 键 = URL SHA-256 hex；`CACHE_LAYOUT=sharded`（默认）两级分目录 `<dir>/ab/cd/<hash>`，`flat` 直落；元数据存 DB `cache_meta`（迁移 `0002_cache_meta.sql`：key/size/atime/created_at/content_type），LRU 按 DB 内 atime
+  - 写：同卷 `CACHE_TMP_DIR` 临时文件流式下载（`cache.Writer` 配合 `io.TeeReader` 边下边存，单趟流式；限 `MaxFileBytes` 默认 50 MB）→ 校验大小 → `os.Rename` 原子落盘（Windows 瞬时锁退避重试 5 次）；超限/写盘失败降级透传不缓存、不报错码
+  - 读：`os.Open` + `io.Copy` 管道直出，命中刷新 DB atime；命中路径不 `stat` 多余元信息
+  - 淘汰：启动时 + 写后总量超 `CACHE_HIGH_WATERMARK`（默认 0.9 × `CACHE_MAX_BYTES` 20 GB）触发；按 atime 升序批删 `CACHE_EVICTION_BATCH`（默认 500），批间隔 100ms；`evictMu` 串行化淘汰（后台触发 TryLock、启动/测试阻塞式 `Evict`）；Windows 上文件被读者占用时跳过该条留待下轮
+  - 并发同 key 去重（img 层 flight：leader 出网，follower 等待后重查缓存）；导出 `Key/Get/Put` 供 M6 恢复模块复用
+- [x] 失败映射：上游 404 → 404 NOT_FOUND（带 X-Upstream-Status）；其余非 200 / 超时 / 连接失败 → 502 UPSTREAM_UNREACHABLE；磁盘写满降级直连（不返回 507，§4.2）
+- [x] config 扩展：`CACHE_DIR`/`CACHE_TMP_DIR`/`CACHE_MAX_BYTES`/`CACHE_LAYOUT`/`CACHE_HIGH_WATERMARK`/`CACHE_EVICTION_BATCH`/`IMG_EXTRA_HOSTS`（名称与 `.env.example` 一致，零值走 cache 包默认值）
+- [x] 验收：httptest mock 上游 + t.TempDir() 缓存目录覆盖 MISS→落盘→HIT（字节一致、上游计数 1）、404/500 映射不入缓存、超上限（已知长度直连 / chunked 未知长度 Writer 降级）透传不缓存、非白名单 403、http scheme 400、无鉴权 401、X-Cache/X-Upstream-Status 头、并发同 key 仅出网一次、disposition=inline；cache 包覆盖 sharded/flat 路径、tmp 同卷前缀、LRU 淘汰（文件+DB 同清）、启动淘汰、atime 刷新、并发同 key Put；日志仅 host+状态+命中+耗时不落 URL；vet/gofmt/test/静态编译全过；PORT=18082 冒烟 401/403/400 ✓。**环境限制**：本机无 gcc，`-race`（需 cgo）未能执行，以 `-count=5` 重复并发用例替代；HDD 压测（`go test -bench`）并入 M8 验收
 
 ---
 
