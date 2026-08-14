@@ -167,18 +167,18 @@ pix_backend/
 
 ## 8. M5 数据同步 /sync（§7）
 
-- [ ] 建表：`sync_domains`（account_id、domain、sync_token）、`sync_entries`（account_id、domain、key、data、updated_at、deleted、tombstone 时间）、`sync_log`（审计）
-- [ ] syncToken 生成：`st_<毫秒时间戳>_<random>`，按（账号 × domain）单调递增
-- [ ] `POST /sync/v1/push`：
-  - 单域单次 ≤ 500 条，超限 400
-  - `baseToken` 与当前不一致且超出保留期（90 天）→ `409 SYNC_FULL_REQUIRED`
-  - 幂等：同 key 按 `updatedAt` 取大者（LWW）
-- [ ] `GET /sync/v1/pull`：`since` + `limit`，响应 `{items, syncToken, hasMore}`；墓碑带 `deleted:true`（保留 90 天）
-- [ ] 域冲突策略 `domains.go`（§7.1）：
-  - LWW：history、search_history、bookmark_snapshot、exif_config、settings、mute（按 key 的 LWW，净效果集合并集）
-- [ ] bookmark_snapshot 结构校验（§7.3）
-- [ ] 敏感字段排除：客户端侧职责（文档 §7.2），服务端校验禁写 `*token*` 字段名（防御）
-- [ ] 验收：多设备（同 accountKey 两设备）push/pull 交叉、冲突合并、墓碑传播、90 天全量重建
+- [x] 建表：`sync_domains`（account_id、domain、sync_token、latest_updated_at，PK(account_id,domain)）、`sync_entries`（account_id、domain、key、data 原始 JSON 文本、updated_at、deleted、seq，PK(account_id,domain,key) + 索引 (account_id,domain,seq)）（迁移 `0003_sync.sql`）。**偏差**：未建 PLAN 中的 `sync_log` 审计表——seq 与 token 数值同源（见下），pull 游标无需额外映射；"tombstone 时间"由 seq 兼任
+- [x] syncToken 生成（`token.go`）：`st_<seq>_<6位随机hex>`，seq 按（账号×域）单调递增（`max(上一水位+1, 当前毫秒)` 起分配，条目各占一个 seq）；内存 map 常驻，启动时从 sync_domains 恢复；push 临界区由 `Service.pushMu` 串行化，并发下同域 token 严格单调
+- [x] `POST /sync/v1/push`（`routes.go` + `service.go`；auth 鉴权 + 写限流 `common.NewLimiter(60, 10)` key=accountID）：
+  - 单域单次 ≤ 500 条，超限 400；domain 必须 6 域之一，否则 400
+  - `baseToken` 与当前不一致且其时间戳落后超 90 天保留期 → `409 SYNC_FULL_REQUIRED`；不一致但在保留期内正常接受（服务端权威，LWW 幂等合并容忍旧 baseToken）
+  - 幂等 LWW：同 key 已有 updated_at >= 传入 updatedAt 跳过（accepted 不计）；否则 upsert（含墓碑覆盖）
+- [x] `GET /sync/v1/pull`：`since` 空串全量，否则解析 token 得 seq 水位增量拉取（`seq > sinceMs`）；无效/过旧超 90 天 → 409 SYNC_FULL_REQUIRED；`limit` 走 `common.ParseLimit`；响应 `{items, syncToken, hasMore}`，含墓碑 `deleted:true`；hasMore 时返回末条 seq 派生的续页 token（格式同源）
+- [x] 域冲突策略 `domains.go`（§7.1）：6 域统一按 key LWW（mute 净效果集合并集）
+- [x] bookmark_snapshot 结构校验（§7.3）：非墓碑条目 illustId 必填（数字）、imageUrls 可缺省/可空数组但元素须全 string
+- [x] 敏感字段排除：客户端侧职责（文档 §7.2），服务端递归拒写含 `token`（大小写不敏感）的字段名 → 400 `SENSITIVE_FIELD_REJECTED`
+- [x] 墓碑保留 90 天：**惰性清理**策略——push 时顺手删该域 `deleted=1 AND seq < now-90d` 的过期墓碑（用服务端 seq 而非客户端可控的 updated_at 判定，防伪造绕过）；pull 不过滤
+- [x] 验收：push→pull 闭环（同 accountKey 两设备交叉）、LWW（旧写跳过/墓碑覆盖/重复幂等）、多设备增量、baseToken 过旧与 since 无效/过旧 409、墓碑传播与过期清理（直接改 DB seq，不依赖真实时间流逝）、501 条/非法域/敏感字段/快照结构 400、token 单调（含 8 goroutine 并发）、账号隔离、无鉴权 401、翻页续拉不丢不重；`go vet`/`gofmt`/`go test ./...`（sync 包 `-count=3`）/ `CGO_ENABLED=0` 静态编译全过。**环境限制**：同 M4，本机无 gcc，`-race` 以 `-count=3` 重复并发用例替代
 
 ---
 

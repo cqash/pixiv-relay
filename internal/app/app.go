@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/arkpix/relay/internal/config"
 	"github.com/arkpix/relay/internal/img"
 	"github.com/arkpix/relay/internal/relay"
+	syncsvc "github.com/arkpix/relay/internal/sync"
 )
 
 // New 构建 HTTP 处理器。中间件链：RequestID → AccessLog → mux。
@@ -44,6 +46,12 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 		return nil, err
 	}
 	img.RegisterRoutes(mux, img.NewService(upstream, imgCache, cfg.ImgExtraHosts), authMw)
+
+	syncSvc, err := syncsvc.NewService(context.Background(), db)
+	if err != nil {
+		return nil, err
+	}
+	syncsvc.RegisterRoutes(mux, syncSvc, authMw)
 
 	return common.RequestID(common.AccessLog(mux)), nil
 }
