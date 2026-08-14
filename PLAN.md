@@ -122,12 +122,12 @@ pix_backend/
 
 ## 5. M2 服务认证 /auth（§5）
 
-- [ ] 建表 `accounts`（id、account_key 哈希、created_at）与 `devices`：id、account_id、device_name、invite_code、access_token、refresh_token、created_at、expires_at
-- [ ] token 方案：accessToken（30d）与 refreshToken（180d），`crypto/rand` 随机不透明串，DB 存储 SHA-256 哈希，轮换制（refresh 后旧 access 立即失效）
-- [ ] `POST /auth/v1/register`：可选 inviteCode 校验（`INVITE_CODES` 配置，空则跳过）；可选 `accountKey` 加入已有账号（无效按 400 拒绝，不静默新建），响应含 `accountKey`、`serverVersion`、`capabilities:["relay","img","sync","recover"]`（§12）；注册端点独立限流 10 次/小时/IP（§9）
-- [ ] `POST /auth/v1/refresh`：refreshToken 换新对，旧 refreshToken 单次使用
-- [ ] 鉴权中间件：`Authorization: Bearer` 解析 → 401（缺失/失效）；预置 token 模式（`STATIC_TOKENS`）供私有部署
-- [ ] 验收：注册→访问→refresh→旧 token 401 全链路测试；accountKey 加入已有账号 → 两设备共享同步数据
+- [x] 建表 `accounts`（id、account_key 哈希、created_at）与 `devices`：id、account_id、device_name、invite_code、access_token、refresh_token、created_at、expires_at（`internal/db/migrations/0001_init.sql`；`internal/db`：WAL/NORMAL + foreign_keys + busy_timeout=5s 连接，`embed.FS` 迁移执行器按文件名序执行、`schema_migrations` 表防重）
+- [x] token 方案：accessToken（30d）与 refreshToken（180d），`crypto/rand` 32B 随机不透明串（前缀 `rl_at_`/`rl_rt_`/`rk_`），DB 存储 SHA-256 十六进制哈希，轮换制（refresh 后旧 access+refresh 立即失效，`auth/tokens.go` + `service.go`）
+- [x] `POST /auth/v1/register`：可选 inviteCode 校验（`INVITE_CODES` 配置，空则跳过，不匹配 403）；可选 `accountKey` 加入已有账号（无效按 400 拒绝，不静默新建），响应含 `accountKey`、`serverVersion:"1.0.0"`、`capabilities:["relay","img","sync","recover"]`（§12）；注册端点独立限流 10 次/小时/IP（burst 3，`common.NewLimiter(10.0/60, 3)` + `common.ClientIP`，§9）
+- [x] `POST /auth/v1/refresh`：refreshToken 换新对，旧 refreshToken 单次使用（**偏差**：响应不含 accountKey——DB 只存哈希无法还原明文，客户端注册时已持有且账号内恒定，待与设计文档 §5.1 对齐）
+- [x] 鉴权中间件 `auth/middleware.go`：`Authorization: Bearer` 解析 → 查库校验未过期 → accountID/deviceID 注入 context，失败 401 INVALID_TOKEN；预置 token 模式（`STATIC_TOKENS`）映射到内置共享账号行（哨兵哈希，无明文可导出）直接通过
+- [x] 验收：注册→访问探针→refresh→旧 token 401 全链路测试；accountKey 加入已有账号 → 两设备同 account_id（DB 断言）；inviteCode 403/200、STATIC_TOKENS 直通、缺 Authorization 头 401 统一错误格式全过；config 扩展 DATA_DIR/DB_PATH/INVITE_CODES/STATIC_TOKENS；`CGO_ENABLED=0` 静态编译通过；PORT=18081 冒烟 register→refresh→旧 refresh 401 实测 ✓
 
 ---
 
