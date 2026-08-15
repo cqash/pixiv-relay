@@ -12,7 +12,7 @@ Pixiv 第三方客户端 ArkPix 的服务端：网络中继 + 数据同步 + 已
 - 测试：`go test ./...`；压测 `go test -bench ./...`
 - 检查：`go vet ./...` + `gofmt -l cmd internal`（**不要**对 `.` 全量跑 gofmt，会扫进 `.toolchain` 的 Go 源码测试数据产生噪音）
 - 静态编译验证（部署形态）：`CGO_ENABLED=0 go build -o bin/server.exe ./cmd/server`
-- CI：`.github/workflows/ci.yml`（golangci-lint + vet + test + linux 静态编译）
+- CI：`.github/workflows/ci.yml`（golangci-lint + vet + test + linux/arm64 交叉编译 + docker 多架构镜像发布 GHCR）
 
 ## 结构
 

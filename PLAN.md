@@ -237,7 +237,7 @@ healthz 200 → 注册设备A（token+accountKey+capabilities）→ 设备B 带 
 
 **安全自查**：全部通过（见 `security_test.go` 五个用例）。
 
-**已知遗留**：`-race` 待 CI（本机无 gcc，以 `-count=N` 重复并发用例替代）；Docker 镜像未实跑构建（本机无 daemon，Dockerfile 仅静态审查）；真实 Pixiv 上联调待客户端接入后进行。
+**已知遗留**：`-race` 待 CI（本机无 gcc，以 `-count=N` 重复并发用例替代）；真实 Pixiv 上联调待客户端接入后进行。**Docker 多架构构建已落地并实测**（2026-08-16，本机 Docker Desktop 29.3 + buildx）：`linux/amd64` 与 `linux/arm64` 镜像均构建成功并 healthz 200（arm64 经 QEMU 模拟运行）；Dockerfile 支持 `TARGETOS/TARGETARCH/TARGETVARIANT` 交叉编译（GOARM 取 variant 去 v），gcr.io / proxy.golang.org 被墙网络经 `--build-arg BASE_IMAGE`（gcr.m.daocloud.io）与 `GOPROXY/GOSUMDB`（goproxy.cn）可配，CI 新增 docker 作业发布 GHCR 多架构镜像。
 
 ---
 
