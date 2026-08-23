@@ -374,6 +374,9 @@ func TestCacheStatsAndEvict(t *testing.T) {
 	}
 
 	// 调低上限使总量超水位，随后手动淘汰。
+	// 注意：PATCH 经 SetLimits 会异步触发一轮淘汰，与手动 Evict 存在竞态——
+	// 若异步淘汰已先行完成，freed 差值合法地为 0，因此只断言非负；
+	// 强断言落在最终态：手动 Evict 为阻塞式，返回后总量必然已降至水位以下。
 	code, _ = e.do(t, http.MethodPatch, "/admin/v1/settings", testToken,
 		map[string]any{"cache_max_bytes": 1000, "cache_high_watermark": 0.5})
 	if code != http.StatusOK {
@@ -383,8 +386,8 @@ func TestCacheStatsAndEvict(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("evict status = %d", code)
 	}
-	if body["freedBytes"].(float64) <= 0 || body["freedEntries"].(float64) <= 0 {
-		t.Fatalf("evict should free something: %v", body)
+	if body["freedBytes"].(float64) < 0 || body["freedEntries"].(float64) < 0 {
+		t.Fatalf("freed should be non-negative: %v", body)
 	}
 	if body["bytes"].(float64) > 500 {
 		t.Fatalf("after evict bytes = %v, want <= 500 (watermark)", body["bytes"])
