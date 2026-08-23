@@ -37,6 +37,23 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 全部环境变量见 [.env.example](.env.example)（注释即文档）：端口/数据目录、缓存容量与分目录策略、注册邀请码与预置 token、上行出口代理、限流配额、恢复源列表与 TTL、CORS 白名单、Web 静态目录、`DATA_ENC_KEY` 用户数据静态加密（AES-256-GCM）。
 
+## API 概览
+
+除 `/healthz` 与 `/auth/v1/*` 外，所有端点需 `Authorization: Bearer <accessToken>`；错误格式统一为 `{ "error": { code, message, requestId } }`。
+
+| 端点 | 说明 |
+| --- | --- |
+| `POST /auth/v1/register` | 设备注册（支持邀请码 / 加入已有账号），返回 access + refresh token 对 |
+| `POST /auth/v1/refresh` | 刷新令牌（轮换制，旧 token 对立即失效） |
+| `POST /relay/v1/request` | 通用 API 中继：包装转发 Pixiv API 请求，解包还原原始响应 |
+| `GET /img/v1/fetch?url=` | 图片中继：磁盘 LRU 缓存 + 304 协商缓存 |
+| `POST /sync/v1/push` / `GET /sync/v1/pull` | 多设备数据同步（设置/历史/屏蔽等域，LWW + 墓碑，游标增量） |
+| `GET /recover/v1/illust/{pid}` | 已删除作品恢复（命中 200 / 拉取中 202 / 未找到 404） |
+| `GET /healthz` | 健康检查（无需鉴权） |
+| `/admin/v1/*` | 管理端（`ADMIN_TOKEN` 非空时启用）：概览 / 缓存管理 / 账号与设备吊销 / 运行时设置热更 |
+
+完整请求/响应字段、错误码与限流规则见 [docs/api.md](docs/api.md)。
+
 ## 协议与文档
 
 - 协议契约（唯一权威，端点/错误格式/同步语义）：ArkPix 客户端仓库 `docs/backend-design.md`
