@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 // setup 构建测试用 HTTP handler：临时库（t.TempDir）+ auth 路由 + 挂鉴权中间件的探针端点。

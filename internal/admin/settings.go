@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 // 可热改设置键白名单（§14.2）。生效优先级：DB 覆盖 > 环境变量 > 内置默认。

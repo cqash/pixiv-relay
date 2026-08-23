@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arkpix/relay/internal/config"
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/config"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 // setup 构建完整应用：临时库 + 临时目录（t.TempDir，绝不碰 ./data）。

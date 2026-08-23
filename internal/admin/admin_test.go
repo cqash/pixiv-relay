@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arkpix/relay/internal/admin"
-	"github.com/arkpix/relay/internal/app"
-	"github.com/arkpix/relay/internal/auth"
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/config"
-	"github.com/arkpix/relay/internal/db"
-	"github.com/arkpix/relay/internal/recover"
+	"github.com/cqash/pixiv-relay/internal/admin"
+	"github.com/cqash/pixiv-relay/internal/app"
+	"github.com/cqash/pixiv-relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/config"
+	"github.com/cqash/pixiv-relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/recover"
 )
 
 const testToken = "test-admin-token"

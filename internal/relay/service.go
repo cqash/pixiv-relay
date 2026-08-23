@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 const (

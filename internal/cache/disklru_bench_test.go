@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 // benchDir 压测数据目录：默认 b.TempDir()（CI 可跑）；BENCH_DIR 环境变量
-// 覆盖到指定磁盘根目录（如 HDD：BENCH_DIR=pix_relay_bench），
+// 覆盖到指定磁盘根目录（如 HDD：BENCH_DIR=<bench 输出目录，如 D 盘>），
 // 每 benchmark 一个子目录，结束后清理。
 func benchDir(b *testing.B) string {
 	b.Helper()

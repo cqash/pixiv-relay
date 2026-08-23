@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/arkpix/relay/internal/auth"
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 // RegisterRoutes 挂载同步端点（§7.2）。

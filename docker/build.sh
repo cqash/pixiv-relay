@@ -15,7 +15,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-IMAGE="${2:-arkpix-relay:latest}"
+IMAGE="${2:-pixiv-relay:latest}"
 EXTRA_ARCH="${3:-}"
 
 # gcr.io / proxy.golang.org 被墙网络经环境变量换镜像源与模块代理（默认已指向可达源）。

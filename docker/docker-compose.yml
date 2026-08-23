@@ -8,8 +8,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: arkpix-relay:latest
-    container_name: arkpix-relay
+    image: pixiv-relay:latest
+    container_name: pixiv-relay
     ports:
       - "8080:8080"
     volumes:

@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arkpix/relay/internal/app"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/config"
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/app"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/config"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 func main() {

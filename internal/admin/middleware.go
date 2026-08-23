@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 // middleware 管理端鉴权（§14.1）：Bearer 与 ADMIN_TOKEN 常量时间比较，

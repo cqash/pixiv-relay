@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arkpix/relay/internal/auth"
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 const staticToken = "test-static-token"

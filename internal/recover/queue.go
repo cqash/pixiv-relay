@@ -14,9 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/arkpix/relay/internal/crypto"
-	"github.com/arkpix/relay/internal/recover/sources"
-	syncsvc "github.com/arkpix/relay/internal/sync"
+	"github.com/cqash/pixiv-relay/internal/crypto"
+	"github.com/cqash/pixiv-relay/internal/recover/sources"
+	syncsvc "github.com/cqash/pixiv-relay/internal/sync"
 )
 
 const (

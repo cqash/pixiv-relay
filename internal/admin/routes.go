@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 // RegisterRoutes 挂载 /admin/v1 路由（§14.3）。全部端点经管理端鉴权中间件

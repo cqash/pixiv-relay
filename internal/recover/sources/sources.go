@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/arkpix/relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/cache"
 )
 
 const (

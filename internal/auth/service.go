@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 // Service 认证业务逻辑（注册 / 刷新）。token 与 accountKey 只经手明文内存，

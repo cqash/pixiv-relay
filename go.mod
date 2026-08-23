@@ -1,4 +1,4 @@
-module github.com/arkpix/relay
+module github.com/cqash/pixiv-relay
 
 go 1.25.0
 

@@ -10,8 +10,8 @@ import (
 	stdsync "sync"
 	"time"
 
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/crypto"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/crypto"
 )
 
 // tombstoneRetentionMs 墓碑保留期（§7.2：90 天）。超过后墓碑可清理、

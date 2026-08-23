@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/arkpix/relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/auth"
 )
 
 // RegisterRoutes 挂载 GET /recover/v1/illust/{pid}（§8.1）。

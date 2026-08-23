@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 const (

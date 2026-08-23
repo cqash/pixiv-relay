@@ -3,7 +3,7 @@ package auth
 import (
 	"net/http"
 
-	"github.com/arkpix/relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/common"
 )
 
 // serverVersion 与 capabilities 供客户端按能力降级 UI（§12）。

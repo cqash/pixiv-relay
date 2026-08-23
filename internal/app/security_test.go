@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/crypto"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/crypto"
 )
 
 // 本文件为 M8 安全自查脚本化测试（§9）：日志脱敏端到端、目录穿越防护、

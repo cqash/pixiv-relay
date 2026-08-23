@@ -50,7 +50,7 @@
 ## 2. 目录结构（目标）
 
 ```
-pix_backend/
+pixiv-relay/
 ├── PLAN.md
 ├── go.mod  go.sum  .env.example
 ├── cmd/
@@ -101,7 +101,7 @@ pix_backend/
 ## 3. M0 项目初始化
 
 - [x] 任务说明：空仓库，初始化 git 已存在
-- [x] `go mod init`（module `github.com/arkpix/relay`）；依赖 `modernc.org/sqlite`、`golang.org/x/time` 推迟到首个使用它的里程碑引入（避免 `go mod tidy` 清除未用依赖）
+- [x] `go mod init`（module `github.com/cqash/pixiv-relay`）；依赖 `modernc.org/sqlite`、`golang.org/x/time` 推迟到首个使用它的里程碑引入（避免 `go mod tidy` 清除未用依赖）
 - [x] 工具链：go1.26.0 便携版置于 `.toolchain/`（已 gitignore，校验 sha256）；`go vet` + `golangci-lint` 配置（`.golangci.yml`）
 - [x] 目录骨架 + `cmd/server/main.go`（slog JSON 日志 + 优雅退出）+ `GET /healthz`（含 httptest 用例）
 - [x] CI（GitHub Actions：golangci-lint + vet + test + `CGO_ENABLED=0` linux 静态编译验证）；`.env.example` 模板（含 §6.4 HDD 项与 §10 全集）

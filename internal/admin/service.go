@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/recover"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/recover"
 )
 
 // ServerVersion 管理端上报的服务端版本（§14.3，与 /auth register 一致）。

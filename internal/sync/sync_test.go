@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arkpix/relay/internal/auth"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/crypto"
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/crypto"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 // setup 构建测试环境：临时库（t.TempDir）+ auth 路由 + sync 路由（挂鉴权）。

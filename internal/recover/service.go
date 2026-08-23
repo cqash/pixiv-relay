@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkpix/relay/internal/auth"
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/crypto"
-	"github.com/arkpix/relay/internal/recover/sources"
+	"github.com/cqash/pixiv-relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/crypto"
+	"github.com/cqash/pixiv-relay/internal/recover/sources"
 )
 
 // 正/负缓存 TTL 默认值（§8.2：正缓存 90 天、负缓存 7 天）。

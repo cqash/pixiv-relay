@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 // openTestCache 临时目录缓存 + 临时 SQLite（已跑迁移），绝不触碰 ./data。

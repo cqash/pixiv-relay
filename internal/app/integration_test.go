@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arkpix/relay/internal/config"
-	"github.com/arkpix/relay/internal/db"
+	"github.com/cqash/pixiv-relay/internal/config"
+	"github.com/cqash/pixiv-relay/internal/db"
 )
 
 // 本文件为 M8 端到端集成测试：httptest.NewServer 起真实 HTTP 服务，

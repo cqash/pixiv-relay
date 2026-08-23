@@ -9,17 +9,17 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/arkpix/relay/internal/admin"
-	"github.com/arkpix/relay/internal/auth"
-	"github.com/arkpix/relay/internal/cache"
-	"github.com/arkpix/relay/internal/common"
-	"github.com/arkpix/relay/internal/config"
-	"github.com/arkpix/relay/internal/crypto"
-	"github.com/arkpix/relay/internal/img"
-	"github.com/arkpix/relay/internal/recover"
-	"github.com/arkpix/relay/internal/relay"
-	syncsvc "github.com/arkpix/relay/internal/sync"
-	"github.com/arkpix/relay/internal/web"
+	"github.com/cqash/pixiv-relay/internal/admin"
+	"github.com/cqash/pixiv-relay/internal/auth"
+	"github.com/cqash/pixiv-relay/internal/cache"
+	"github.com/cqash/pixiv-relay/internal/common"
+	"github.com/cqash/pixiv-relay/internal/config"
+	"github.com/cqash/pixiv-relay/internal/crypto"
+	"github.com/cqash/pixiv-relay/internal/img"
+	"github.com/cqash/pixiv-relay/internal/recover"
+	"github.com/cqash/pixiv-relay/internal/relay"
+	syncsvc "github.com/cqash/pixiv-relay/internal/sync"
+	"github.com/cqash/pixiv-relay/internal/web"
 )
 
 // New 构建 HTTP 处理器（出网客户端按 cfg.UpstreamProxy 创建）。语义同 NewWithClient。
