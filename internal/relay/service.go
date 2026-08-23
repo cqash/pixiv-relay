@@ -182,7 +182,7 @@ func (s *Service) Do(ctx context.Context, req *Request) (*Response, error) {
 		s.log(ctx, method, host, http.StatusBadGateway, start)
 		return nil, common.BadGateway("upstream unreachable")
 	}
-	defer upResp.Body.Close()
+	defer func() { _ = upResp.Body.Close() }()
 
 	// 流式读但限 1 MB：多读 1 字节判断是否超限（HDD 策略：禁止整读入内存）。
 	raw, err := io.ReadAll(io.LimitReader(upResp.Body, maxBodyBytes+1))

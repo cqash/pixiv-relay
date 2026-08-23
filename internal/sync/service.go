@@ -203,7 +203,7 @@ func (s *Service) Pull(ctx context.Context, accountID int64, domain, since strin
 	if err != nil {
 		return nil, fmt.Errorf("query sync entries: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]PullItem, 0, limit)
 	seqs := make([]int64, 0, limit)

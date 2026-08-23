@@ -41,7 +41,7 @@ func (s *TokenStore) Load(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("load sync tokens: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var accountID int64
 		var domain, tok string
