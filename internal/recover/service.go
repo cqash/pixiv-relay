@@ -46,6 +46,10 @@ type Config struct {
 	GlobalConcurrent    int           // 全局抓取并发上限（默认 8）
 	RatePerMin          float64       // 端点限流（默认 60/min，burst 10）
 
+	// Limiter 共享写端点限流器（app 层统一持有，供管理端 §14.2 热调速率）；
+	// nil 时按 RatePerMin 自建（保持既有测试调用兼容）。
+	Limiter *common.Limiter
+
 	// Enc 用户数据静态加密器（§9，与 sync 共用 DATA_ENC_KEY；nil = 不加密）。
 	// recover_cache 的 pages/meta 同属用户数据，与存量明文按前缀混存兼容。
 	Enc *crypto.Cipher
@@ -97,14 +101,29 @@ func NewService(db *sql.DB, c *cache.DiskLRU, client *http.Client, cfg Config) (
 		}
 	}
 
+	limiter := cfg.Limiter
+	if limiter == nil {
+		limiter = common.NewLimiter(cfg.RatePerMin, defaultRateBurst)
+	}
 	return &Service{
 		db:      db,
 		queue:   newQueue(db, srcs, cfg.GlobalConcurrent, int64(cfg.TTLDays)*dayMs, int64(cfg.NegativeTTLDays)*dayMs, cfg.Enc),
 		shared:  cfg.Shared,
 		enc:     cfg.Enc,
-		limiter: common.NewLimiter(cfg.RatePerMin, defaultRateBurst),
+		limiter: limiter,
 		now:     func() int64 { return time.Now().UnixMilli() },
 	}, nil
+}
+
+// SetTTLDays 热更新正/负缓存 TTL 天数（管理端 §14.2），仅影响新写入的缓存行。
+func (s *Service) SetTTLDays(ttlDays, negativeTTLDays int) {
+	s.queue.SetTTLs(int64(ttlDays)*dayMs, int64(negativeTTLDays)*dayMs)
+}
+
+// TTLDays 读回当前生效的正/负缓存 TTL 天数。
+func (s *Service) TTLDays() (ttlDays, negativeTTLDays int) {
+	ttlMs, negMs := s.queue.TTLs()
+	return int(ttlMs / dayMs), int(negMs / dayMs)
 }
 
 // cacheRow recover_cache 命中行（仅 ready / not_found 且未过期）。

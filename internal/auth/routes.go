@@ -7,7 +7,7 @@ import (
 )
 
 // serverVersion 与 capabilities 供客户端按能力降级 UI（§12）。
-const serverVersion = "1.0.0"
+const serverVersion = "1.1.0"
 
 var capabilities = []string{"relay", "img", "sync", "recover"}
 

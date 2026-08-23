@@ -148,3 +148,23 @@ API / OAuth 通用中继（§6.1）。鉴权 + 写限流。
 - `CORS_ORIGINS` 逗号分隔白名单；空 = 完全关闭跨域。开启后仅对白名单内 Origin
   在 API 路径上回显 `Access-Control-Allow-Origin` 并应答 preflight
   （允许 `Authorization, Content-Type` 头，`Access-Control-Max-Age: 86400`）。
+
+## 管理端 /admin/v1（§14）
+
+面向部署方的运维管理面。`ADMIN_TOKEN` 环境变量为空时不注册任何 `/admin/` 路由；
+非空时所有端点要求 `Authorization: Bearer <ADMIN_TOKEN>`（常量时间比较），
+认证路径挂 per-IP 限流 30 次/分钟。错误格式同 §4。
+
+- `GET /admin/v1/overview` → `{ serverVersion, uptimeSec, accounts, devices, cache:{bytes,entries}, recoverCache:{status:count}, settings:{key:{value,source}} }`
+- `GET /admin/v1/settings` → `{ key: { value, source } }`，`source` ∈ `db`（运行时覆盖）/ `env` / `default`
+- `PATCH /admin/v1/settings` —— 请求体为部分键值（数值型 JSON），白名单键：
+  `cache_max_bytes`、`cache_high_watermark`、`recover_ttl_days`、`recover_negative_ttl_days`、
+  `rate_write_per_min`、`rate_img_per_min`。全部校验通过才落库并**立即热生效**；未知键/非法值 400
+- `GET /admin/v1/cache/stats` → `{ bytes, entries, maxBytes, highWatermark, layout, dir }`
+- `POST /admin/v1/cache/evict` —— 立即按水位淘汰 → `{ freedBytes, freedEntries, bytes, entries }`
+- `GET /admin/v1/accounts?limit=&cursor=` → `{ items: [{ id, createdAt, deviceCount, syncEntryCount }], nextCursor }`
+- `GET /admin/v1/accounts/{id}/devices` → `{ items: [{ id, deviceName, createdAt, accessExpiresAt, refreshExpiresAt }] }`
+- `DELETE /admin/v1/devices/{id}` —— 吊销设备，其 token 立即失效；不存在 404
+- `DELETE /admin/v1/accounts/{id}` —— 删除账号并级联清理 devices / sync_entries / sync_domains / recover_cache（不可恢复）；不存在 404
+
+时间字段均为毫秒时间戳。账号/设备列表只暴露元信息，不含任何凭据材料。

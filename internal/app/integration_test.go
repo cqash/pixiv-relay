@@ -222,7 +222,7 @@ func TestUserJourney(t *testing.T) {
 	if tokenA == "" || refreshA == "" || accountKey == "" {
 		t.Fatalf("register A missing credentials: %v", regA)
 	}
-	if regA["serverVersion"] != "1.0.0" {
+	if regA["serverVersion"] != "1.1.0" {
 		t.Fatalf("serverVersion = %v", regA["serverVersion"])
 	}
 

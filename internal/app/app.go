@@ -5,8 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/arkpix/relay/internal/admin"
 	"github.com/arkpix/relay/internal/auth"
 	"github.com/arkpix/relay/internal/cache"
 	"github.com/arkpix/relay/internal/common"
@@ -52,7 +55,13 @@ func NewWithClient(cfg *config.Config, db *sql.DB, upstream *http.Client) (http.
 			return nil, err
 		}
 	}
-	relay.RegisterRoutes(mux, relay.NewService(upstream, cfg.RelayExtraHosts), authMw, cfg.RateWritePerMin)
+
+	// 共享限流器（§14.2 热调目标）：写端点（relay/sync/recover）一个，图片端点一个，
+	// 管理端持引用热调速率。
+	writeLimiter := common.NewLimiter(cfg.RateWritePerMin, 10)
+	imgLimiter := common.NewLimiter(cfg.RateImgPerMin, 30)
+
+	relay.RegisterRoutes(mux, relay.NewService(upstream, cfg.RelayExtraHosts), authMw, writeLimiter)
 
 	imgCache, err := cache.Open(db, cache.Config{
 		Dir:           cfg.CacheDir,
@@ -65,13 +74,13 @@ func NewWithClient(cfg *config.Config, db *sql.DB, upstream *http.Client) (http.
 	if err != nil {
 		return nil, err
 	}
-	img.RegisterRoutes(mux, img.NewService(upstream, imgCache, cfg.ImgExtraHosts), authMw, cfg.RateImgPerMin)
+	img.RegisterRoutes(mux, img.NewService(upstream, imgCache, cfg.ImgExtraHosts), authMw, imgLimiter)
 
 	syncSvc, err := syncsvc.NewService(context.Background(), db, enc)
 	if err != nil {
 		return nil, err
 	}
-	syncsvc.RegisterRoutes(mux, syncSvc, authMw, cfg.RateWritePerMin)
+	syncsvc.RegisterRoutes(mux, syncSvc, authMw, writeLimiter)
 
 	recoverSvc, err := recover.NewService(db, imgCache, upstream, recover.Config{
 		Sources:         cfg.RecoverSources,
@@ -81,12 +90,23 @@ func NewWithClient(cfg *config.Config, db *sql.DB, upstream *http.Client) (http.
 		TmpDir:          cfg.RecoverTmpDir,
 		ImgExtraHosts:   cfg.ImgExtraHosts,
 		RatePerMin:      cfg.RateWritePerMin,
+		Limiter:         writeLimiter,
 		Enc:             enc,
 	})
 	if err != nil {
 		return nil, err
 	}
 	recover.RegisterRoutes(mux, recoverSvc, authMw)
+
+	// 管理端（§14）：ADMIN_TOKEN 空 = 完全关闭，不注册任何 /admin/ 路由。
+	if cfg.AdminToken != "" {
+		adminSvc := admin.NewService(db, imgCache, recoverSvc, writeLimiter, imgLimiter,
+			admin.EnvSnapshotFromEnv(), time.Now())
+		admin.RegisterRoutes(mux, adminSvc, cfg.AdminToken)
+		slog.Info("admin API enabled at /admin/v1/")
+	} else {
+		slog.Info("admin API disabled (ADMIN_TOKEN empty)")
+	}
 
 	// Web 前端静态托管（§6.5）：兜底匹配所有未被 API 命中的 GET 路径，
 	// 前端路由 fallback 到 index.html。

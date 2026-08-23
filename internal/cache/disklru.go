@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,10 +56,14 @@ type Meta struct {
 }
 
 // DiskLRU 磁盘 LRU 缓存。读写与淘汰并发安全；淘汰由 evictMu 串行化。
+// MaxBytes/HighWatermark 可经 SetLimits 热更新（§14.2），读路径一律走原子量。
 type DiskLRU struct {
 	cfg   Config
 	db    *sql.DB
 	total atomic.Int64 // DB 内缓存总字节数（启动时汇总，Put/Evict 增量维护）
+
+	maxBytes      atomic.Int64  // 热更新副本（初值 = cfg.MaxBytes）
+	highWatermark atomic.Uint64 // 热更新副本，math.Float64bits 存储
 
 	evictMu sync.Mutex // TryLock 串行化淘汰，避免并发淘汰互相踩踏
 }
@@ -103,6 +108,8 @@ func Open(db *sql.DB, cfg Config) (*DiskLRU, error) {
 	}
 
 	c := &DiskLRU{cfg: cfg, db: db}
+	c.maxBytes.Store(cfg.MaxBytes)
+	c.highWatermark.Store(math.Float64bits(cfg.HighWatermark))
 	var total int64
 	if err := db.QueryRow("SELECT COALESCE(SUM(size), 0) FROM cache_meta").Scan(&total); err != nil {
 		return nil, fmt.Errorf("cache: sum cache size: %w", err)
@@ -114,7 +121,30 @@ func Open(db *sql.DB, cfg Config) (*DiskLRU, error) {
 }
 
 // Config 返回规范化后的配置（img 服务需要 MaxFileBytes 做直连判定）。
-func (c *DiskLRU) Config() Config { return c.cfg }
+// MaxBytes/HighWatermark 取热更新后的生效值。
+func (c *DiskLRU) Config() Config {
+	cfg := c.cfg
+	cfg.MaxBytes = c.maxBytes.Load()
+	cfg.HighWatermark = math.Float64frombits(c.highWatermark.Load())
+	return cfg
+}
+
+// Stats 当前用量：总字节数（内存原子量）+ DB 内条目数（管理端 §14.3）。
+func (c *DiskLRU) Stats(ctx context.Context) (bytes int64, entries int64, err error) {
+	if err := c.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM cache_meta").Scan(&entries); err != nil {
+		return 0, 0, fmt.Errorf("cache: count meta: %w", err)
+	}
+	return c.total.Load(), entries, nil
+}
+
+// SetLimits 热更新容量上限与水位（管理端 §14.2，调用方已校验取值范围）。
+// 调低后总量超新水位时触发一次异步淘汰。
+func (c *DiskLRU) SetLimits(maxBytes int64, highWatermark float64) {
+	c.maxBytes.Store(maxBytes)
+	c.highWatermark.Store(math.Float64bits(highWatermark))
+	c.maybeEvict()
+}
 
 // pathFor 计算键对应的落盘路径（sharded：前两字节两级子目录）。
 func (c *DiskLRU) pathFor(key string) string {
@@ -271,7 +301,7 @@ func (c *DiskLRU) maybeEvict() {
 }
 
 func (c *DiskLRU) watermark() int64 {
-	return int64(c.cfg.HighWatermark * float64(c.cfg.MaxBytes))
+	return int64(math.Float64frombits(c.highWatermark.Load()) * float64(c.maxBytes.Load()))
 }
 
 // Evict 淘汰至水位以下（阻塞等待进行中的淘汰完成后执行，启动与测试用）。

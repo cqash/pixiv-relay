@@ -10,6 +10,7 @@ import (
 )
 
 // all: 前缀必须保留——Vite 产物含 _ 前缀的 chunk（如 _plugin-vue_export-helper），默认规则排除 ./_ 开头文件
+//
 //go:embed all:dist
 var distFS embed.FS
 

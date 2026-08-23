@@ -43,6 +43,7 @@
 | M6 | 删除图恢复 /recover | 异步队列、多源探测、负缓存 | 202→轮询→200/404 流程 |
 | M7 | 部署形态 | Docker、UPSTREAM_PROXY、Web 托管 | 一键起容器，机械盘上跑缓存压测 |
 | M8 | 集成与验收 | 全链路测试、压测报告 | 对照 §13 端点清单全部可用 |
+| M9 | 管理端 /admin | Admin API + Web 管理页面 | 对照 §14 端点清单全部可用 |
 
 ---
 
@@ -241,7 +242,20 @@ healthz 200 → 注册设备A（token+accountKey+capabilities）→ 设备B 带 
 
 ---
 
-## 12. 验收对照（§13 端点清单）
+## 12. M9 管理端 /admin（§14，设计文档 v1.1）
+
+- [x] 设计文档先行：客户端仓库 `docs/backend-design.md` 新增 §14（管理端鉴权/settings 热更语义/端点清单），版本 v1.0 → v1.1；register 响应 `serverVersion` 同步升 "1.1.0"（`internal/auth/routes.go` + 两处测试断言）
+- [x] 鉴权（`internal/admin/middleware.go`）：`ADMIN_TOKEN` 环境变量，空 = 不注册任何 `/admin/` 路由（启动 log info）；Bearer 常量时间比较（`crypto/subtle`），失败 401 INVALID_TOKEN 统一信封；认证路径 per-IP 限流 30/min burst 5 防爆破
+- [x] settings 热更（`internal/admin/settings.go` + 迁移 `0005_settings.sql`）：`settings(key,value,updated_at)` 表存运行时覆盖，生效优先级 DB > env > 默认；GET 每项带 `source` 标记；PATCH 全量校验（未知键/非法值 400 报键名）后事务落库 + 立即热生效。白名单六键：`cache_max_bytes`/`cache_high_watermark`/`recover_ttl_days`/`recover_negative_ttl_days`/`rate_write_per_min`/`rate_img_per_min`
+- [x] 热更挂钩（最小侵入）：`cache.DiskLRU` MaxBytes/HighWatermark 改原子量 + 新增 `Stats()`/`SetLimits()`（调低触发一次 maybeEvict）；recover `queue.go` ttlMs/negMs 改 `atomic.Int64` + `SetTTLs`；`common.Limiter.SetRate`（持锁更新并同步存量桶）；app 层构造共享 writeLimiter/imgLimiter 注入 relay/img/sync/recover（RegisterRoutes 变参 `...float64` → `...*common.Limiter`，无参调用兼容）
+- [x] 端点（`internal/admin/routes.go` + `service.go`）：`GET /overview`（版本/uptime/账号设备计数/缓存用量/recover_cache 按 status 计数/生效 settings）、`GET|PATCH /settings`、`GET /cache/stats`、`POST /cache/evict`（前后 Stats 差值返回 freedBytes/freedEntries）、`GET /accounts`（created_at,id 升序 + common 游标分页，LEFT JOIN 计 deviceCount/syncEntryCount）、`GET /accounts/{id}/devices`、`DELETE /devices/{id}`（吊销即 token 失效，404 语义）、`DELETE /accounts/{id}`（事务级联 devices/sync_entries/sync_domains/recover_cache，FK 无 CASCADE 显式删）
+- [x] CORS：`cors.go` API 前缀加 `/admin/`，preflight Allow-Methods 扩 `PATCH, DELETE`
+- [x] Web 管理页面（独立 Web 前端工程）：`src/api/admin.ts`（token 存 `arkpix.web.admin`，401 清 token 跳登录）+ `/admin` 路由区（守卫只验 admin token，绕开双登录）+ 五视图（登录/布局导航/概览卡片/缓存进度条+淘汰+上限编辑/账号表格+吊销+级联删除双确认/设置表单）；`vite.config.ts` 代理加 `/admin`；产物经 deploy 拷入 `internal/web/dist/`
+- [x] 验收：`internal/admin/admin_test.go` 11 个用例（关闭态 404/405、401 信封、settings 三来源/持久化/非法值、SetLimits 热生效、evict 释放量、分页、吊销后 401、级联删除断言、限流 429）；`go vet`/`gofmt`/`go test ./... -count=1`/`CGO_ENABLED=0` 静态编译全过；前后端联调冒烟（PORT=18080 + ADMIN_TOKEN）：SPA fallback / 401 / overview / PATCH 即时生效 / accounts 分页 ✓。**已知说明**：管理端关闭时 GET /admin/* 会命中 SPA 兜底返回 index.html（语义等同未注册）；成功响应带顶层 `requestId` 字段（WriteJSON 统一行为）
+
+---
+
+## 13. 验收对照（§13 端点清单）
 
 | 方法 | 路径 | 状态 |
 |---|---|---|
@@ -256,7 +270,7 @@ healthz 200 → 注册设备A（token+accountKey+capabilities）→ 设备B 带 
 
 ---
 
-## 13. 风险与对策
+## 14. 风险与对策
 
 | 风险 | 对策 |
 |---|---|

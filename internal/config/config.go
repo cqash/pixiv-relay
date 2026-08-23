@@ -55,6 +55,10 @@ type Config struct {
 	// 空 = 不加密（向后兼容存量明文）；格式错误启动直接报错（internal/crypto.Load）。
 	DataEncKey string
 
+	// AdminToken 管理端 Bearer token（§14.1）。空 = 管理端完全关闭，
+	// 不注册任何 /admin/ 路由；与服务账号体系完全解耦。
+	AdminToken string
+
 	// 限流配额（§9，次/分钟；注册端点为次/小时）。<= 0 取默认值。
 	RateWritePerMin     float64 // 写端点（relay/sync/recover），默认 60
 	RateImgPerMin       float64 // 图片端点，默认 300
@@ -112,6 +116,7 @@ func Load() *Config {
 		WebDir:      strings.TrimSpace(os.Getenv("WEB_DIR")),
 		CORSOrigins: splitCSV(os.Getenv("CORS_ORIGINS")),
 		DataEncKey:  strings.TrimSpace(os.Getenv("DATA_ENC_KEY")),
+		AdminToken:  strings.TrimSpace(os.Getenv("ADMIN_TOKEN")),
 
 		RateWritePerMin:     envFloatDef("RATE_WRITE_PER_MIN", 60),
 		RateImgPerMin:       envFloatDef("RATE_IMG_PER_MIN", 300),

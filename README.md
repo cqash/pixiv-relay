@@ -32,7 +32,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ## 协议与文档
 
-- 协议契约（唯一权威，端点/错误格式/同步语义）：`ArkPix/docs\backend-design.md`
+- 协议契约（唯一权威，端点/错误格式/同步语义）：ArkPix 客户端仓库 `docs/backend-design.md`
 - 端点速查：[docs/api.md](docs/api.md)
 - 开发计划与各里程碑验收：[PLAN.md](PLAN.md)
 
@@ -48,3 +48,7 @@ CGO_ENABLED=0 go build -o bin/server.exe ./cmd/server           # 静态编译�
 ```
 
 更多约定（依赖策略、机械硬盘 IO 策略、认证与加密模型）见 [AGENTS.md](AGENTS.md)。
+
+## License
+
+[MIT](LICENSE)

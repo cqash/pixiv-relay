@@ -9,18 +9,23 @@ import (
 )
 
 // RegisterRoutes 挂载同步端点（§7.2）。
-// push 链：auth 鉴权 → 写端点限流（默认 60/min，burst 10，key = accountID，§9；writePerMin 可覆盖）→ handler；
+// push 链：auth 鉴权 → 写端点限流（默认 60/min，burst 10，key = accountID，§9）→ handler；
 // pull 为只读端点，仅挂鉴权。
-func RegisterRoutes(mux *http.ServeMux, svc *Service, mw *auth.Middleware, writePerMin ...float64) {
-	perMin := 60.0
-	if len(writePerMin) > 0 && writePerMin[0] > 0 {
-		perMin = writePerMin[0]
-	}
-	limiter := common.NewLimiter(perMin, 10)
+// 可注入共享 Limiter（app 层统一持有，供管理端 §14.2 热调速率）；缺省内部自建。
+func RegisterRoutes(mux *http.ServeMux, svc *Service, mw *auth.Middleware, limiters ...*common.Limiter) {
+	limiter := sharedOrNew(limiters, 60, 10)
 	mux.Handle("POST /sync/v1/push",
 		mw.Wrap(limiter.Middleware(accountKey)(http.HandlerFunc(pushHandler(svc)))))
 	mux.Handle("GET /sync/v1/pull",
 		mw.Wrap(http.HandlerFunc(pullHandler(svc))))
+}
+
+// sharedOrNew 取注入的共享限流器；未注入时按配额自建（保持既有测试调用兼容）。
+func sharedOrNew(limiters []*common.Limiter, perMin float64, burst int) *common.Limiter {
+	if len(limiters) > 0 && limiters[0] != nil {
+		return limiters[0]
+	}
+	return common.NewLimiter(perMin, burst)
 }
 
 // accountKey 限流键 = accountID（限流中间件在鉴权之后执行，必有值）。

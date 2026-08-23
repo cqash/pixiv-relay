@@ -111,8 +111,8 @@ func TestFullFlow(t *testing.T) {
 	if reg["expiresIn"].(float64) != 2592000 {
 		t.Fatalf("expiresIn want 2592000, got %v", reg["expiresIn"])
 	}
-	if reg["serverVersion"] != "1.0.0" {
-		t.Fatalf("serverVersion want 1.0.0, got %v", reg["serverVersion"])
+	if reg["serverVersion"] != "1.1.0" {
+		t.Fatalf("serverVersion want 1.1.0, got %v", reg["serverVersion"])
 	}
 	if reg["requestId"] == nil || reg["requestId"] == "" {
 		t.Fatal("register response missing requestId")

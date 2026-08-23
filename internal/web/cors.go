@@ -7,7 +7,7 @@ import (
 
 // apiPathPrefixes 需要 CORS 处理的 API 路径前缀（§6.5：跨域部署时放开 API 访问；
 // 静态资源同源托管，无需 CORS 头）。
-var apiPathPrefixes = []string{"/auth/", "/relay/", "/img/", "/sync/", "/recover/", "/healthz"}
+var apiPathPrefixes = []string{"/auth/", "/relay/", "/img/", "/sync/", "/recover/", "/admin/", "/healthz"}
 
 // CORS 跨域中间件（§6.5）：origins 为白名单（逗号分隔配置解析结果）。
 // 空白名单 = 完全不开跨域（同源部署不需要），原样透传。
@@ -31,7 +31,7 @@ func CORS(origins []string, next http.Handler) http.Handler {
 		h.Set("Access-Control-Allow-Origin", origin)
 		h.Add("Vary", "Origin")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
-			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			h.Set("Access-Control-Max-Age", "86400")
 			w.WriteHeader(http.StatusNoContent)

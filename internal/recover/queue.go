@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arkpix/relay/internal/crypto"
@@ -34,8 +35,8 @@ type Queue struct {
 	db    *sql.DB
 	srcs  []sources.Source
 	sem   chan struct{}
-	ttlMs int64
-	negMs int64
+	ttlMs atomic.Int64   // 正缓存 TTL（可经 SetTTLs 热更新，§14.2）
+	negMs atomic.Int64   // 负缓存 TTL（同上）
 	enc   *crypto.Cipher // 静态加密（§9）；nil = 不加密
 	now   func() int64
 
@@ -47,16 +48,28 @@ func newQueue(db *sql.DB, srcs []sources.Source, globalConcurrent int, ttlMs, ne
 	if globalConcurrent <= 0 {
 		globalConcurrent = DefaultGlobalConcurrent
 	}
-	return &Queue{
+	q := &Queue{
 		db:       db,
 		srcs:     srcs,
 		sem:      make(chan struct{}, globalConcurrent),
-		ttlMs:    ttlMs,
-		negMs:    negMs,
 		enc:      enc,
 		now:      func() int64 { return time.Now().UnixMilli() },
 		inflight: make(map[string]struct{}),
 	}
+	q.ttlMs.Store(ttlMs)
+	q.negMs.Store(negMs)
+	return q
+}
+
+// SetTTLs 热更新正/负缓存 TTL（管理端 §14.2），仅影响新写入的缓存行。
+func (q *Queue) SetTTLs(ttlMs, negMs int64) {
+	q.ttlMs.Store(ttlMs)
+	q.negMs.Store(negMs)
+}
+
+// TTLs 读回当前生效的正/负缓存 TTL（毫秒）。
+func (q *Queue) TTLs() (ttlMs, negMs int64) {
+	return q.ttlMs.Load(), q.negMs.Load()
 }
 
 // Enqueue 入队抓取任务并写 fetching 占位行；同 (account, pid) 在途只入队一次。
@@ -101,7 +114,7 @@ func (q *Queue) work(accountID int64, pid, key string) {
 		if err != nil {
 			continue
 		}
-		if err := q.writeResult(accountID, pid, pages, src.Name(), snapshotMeta(snap), q.now()+q.ttlMs); err != nil {
+		if err := q.writeResult(accountID, pid, pages, src.Name(), snapshotMeta(snap), q.now()+q.ttlMs.Load()); err != nil {
 			slog.Error("recover write ready failed", "err", err)
 		}
 		slog.Info("recover ready",
@@ -109,7 +122,7 @@ func (q *Queue) work(accountID int64, pid, key string) {
 			"durMs", time.Since(start).Milliseconds())
 		return
 	}
-	if err := q.writeStatus(accountID, pid, "not_found", q.now()+q.negMs); err != nil {
+	if err := q.writeStatus(accountID, pid, "not_found", q.now()+q.negMs.Load()); err != nil {
 		slog.Error("recover write not_found failed", "err", err)
 	}
 	slog.Info("recover not_found", "pid", pid, "durMs", time.Since(start).Milliseconds())

@@ -2,7 +2,7 @@
 
 Pixiv 第三方客户端 ArkPix 的服务端：网络中继 + 数据同步 + 已删除作品恢复 + Web 端托管。Go 1.24+ 标准库为主，SQLite（WAL），部署目标 NAS/小 VPS（机械硬盘友好）。
 
-**协议契约**：`ArkPix/docs\backend-design.md`（v1.0 定稿）是唯一权威，端点/错误格式/同步语义改动必须先改文档并升级 `/v1/` 版本号。**开发计划与里程碑进度**：`PLAN.md`（M0–M8，勾选制）。
+**协议契约**：客户端仓库 `docs/backend-design.md`（v1.1，含 §14 管理端）是唯一权威，端点/错误格式/同步语义改动必须先改文档并升级 `/v1/` 版本号。**开发计划与里程碑进度**：`PLAN.md`（M0–M9，勾选制）。
 
 ## 工具链与命令
 
@@ -26,6 +26,7 @@ internal/
   cache/disklru.go     # 磁盘 LRU 缓存（M4）
   sync/ recover/       # 同步域与恢复队列（M5–M6）
   crypto/              # 用户数据静态加密（M7，AES-256-GCM，enc:v1: 前缀混存兼容）
+  admin/               # 管理端 API（M9，§14）：ADMIN_TOKEN 鉴权、settings 热更、缓存/账号管理
   storage/repository.go # 仓储接口（SQLite 实现，预留 Postgres）
   web/embed.go         # go:embed SPA 静态资源（M7；dist/ 由独立前端工程产出，仅占位 index.html 入库）
   web/spa.go cors.go   # SPA 托管（WEB_DIR 磁盘模式可切）与 CORS_ORIGINS 白名单（M7）
@@ -39,9 +40,10 @@ docker/                # Dockerfile（multi-stage → scratch/distroless）+ com
 - **协议面**：错误统一 `{error:{code,message,requestId}}`；列表端点游标分页 `{items,nextCursor}`；同步 token 按（账号 × domain）单调递增；日志绝不落 `authorization`/body（slog 脱敏 Handler）
 - **认证**：服务端账号体系与 Pixiv 解耦，`accountKey` 加入已有账号（只存哈希）；公网部署必须 `INVITE_CODES` 或 `STATIC_TOKENS`
 - **静态加密（§9，M7）**：`DATA_ENC_KEY`（base64 32B）开启后 `sync_entries.data` 与 `recover_cache` 的 pages/meta 落库前 AES-256-GCM 加密；密文带 `enc:v1:` 前缀，与存量明文混存兼容；空 = 不加密；密钥格式错误启动直接退出
+- **管理端（§14，M9）**：`ADMIN_TOKEN` 空 = `/admin/v1/*` 不注册；六键运行时设置（缓存上限/水位、recover TTL、限流）存 `settings` 表，DB > env > 默认，PATCH 立即热生效；管理 UI 在 Web 前端工程 `/admin` 路由区
 - 测试用 `net/http/httptest`，集成测试一律临时目录，不碰真实 `data/`
 
 ## 关联工程
 
-- 客户端（HarmonyOS ArkTS）：`ArkPix/`（见其 AGENTS.md）；客户端按设计文档 §11 改造清单实现 relay 模式
+- 客户端（HarmonyOS ArkTS）：独立仓库；客户端按设计文档 §11 改造清单实现 relay 模式
 - Web 前端：独立工程，构建产物拷入 `internal/web/dist/` 后随二进制 embed 分发

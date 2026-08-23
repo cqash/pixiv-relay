@@ -59,6 +59,19 @@ func (l *Limiter) allow(key string) (ok bool, retryAfterSec int) {
 	return false, retry
 }
 
+// SetRate 热更新速率与桶容量（管理端 §14.2）：更新默认参数并同步调整存量桶，
+// 立即全量生效。
+func (l *Limiter) SetRate(perMinute float64, burst int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.r = rate.Limit(perMinute / 60)
+	l.burst = burst
+	for _, b := range l.buckets {
+		b.lim.SetLimit(l.r)
+		b.lim.SetBurst(burst)
+	}
+}
+
 // sweep 回收空转桶，调用方需持锁。
 func (l *Limiter) sweep() {
 	cutoff := time.Now().Add(-l.ttl)
