@@ -2,6 +2,13 @@
 
 Pixiv 第三方客户端 ArkPix 的自托管服务端：网络中继（/relay）、图片中继与磁盘 LRU 缓存（/img）、多设备数据同步（/sync）、已删除作品恢复（/recover）、Web 端静态托管。Go 1.24+ 标准库为主，SQLite（WAL，纯 Go 驱动），单静态二进制交付，NAS / 小 VPS（机械硬盘）友好。
 
+## 相关项目
+
+| 仓库 | 说明 |
+| --- | --- |
+| [ArkPix](https://github.com/cqash/ArkPix) | HarmonyOS 客户端（ArkTS / ArkUI） |
+| [pixiv-web](https://github.com/cqash/pixiv-web) | Web 前端（Vue 3），构建产物嵌入本服务同源托管 |
+
 ## 快速开始
 
 本机运行（便携工具链，无需系统级 Go）：
