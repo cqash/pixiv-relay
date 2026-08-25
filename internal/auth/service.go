@@ -33,11 +33,12 @@ func NewService(db *sql.DB, inviteCodes []string) *Service {
 }
 
 // Register 注册设备（§5.1）：
-//   - 配置了 INVITE_CODES 时 inviteCode 必须匹配，否则 403；
 //   - accountKey 非空时加入对应账号（无效按 400 拒绝，不静默新建）；
-//   - accountKey 为空时新建账号并签发新 accountKey。
+//     持有有效 accountKey 即证明账号所有权，跳过邀请码校验；
+//   - accountKey 为空时新建账号并签发新 accountKey，
+//     配置了 INVITE_CODES 时 inviteCode 必须匹配，否则 403。
 func (s *Service) Register(ctx context.Context, deviceName, inviteCode, accountKey string) (*TokenPair, error) {
-	if len(s.inviteCodes) > 0 && !slices.Contains(s.inviteCodes, inviteCode) {
+	if accountKey == "" && len(s.inviteCodes) > 0 && !slices.Contains(s.inviteCodes, inviteCode) {
 		return nil, common.Forbidden("invalid invite code")
 	}
 

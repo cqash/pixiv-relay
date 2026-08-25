@@ -32,6 +32,9 @@
 { "deviceName": "Mate 60", "inviteCode": "可选", "accountKey": "可选，加入已有账号" }
 ```
 
+- `inviteCode`：新注册时若服务器配置了 `INVITE_CODES` 则必填（403 `invalid invite code`）；
+  携带 `accountKey` 加入已有账号时无需邀请码（持有 accountKey 即证明账号所有权）。
+
 响应 200：
 
 ```json

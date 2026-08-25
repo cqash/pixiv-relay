@@ -213,6 +213,20 @@ func TestInviteCodes(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("valid inviteCode want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+
+	// accountKey 加入已有账号跳过邀请码校验：无 inviteCode → 200
+	reg := register(t, h, map[string]any{"deviceName": "d2", "inviteCode": "invite-1"})
+	accountKey, _ := reg["accountKey"].(string)
+	reg2 := register(t, h, map[string]any{"deviceName": "d3", "accountKey": accountKey})
+	if reg2["accountKey"] != accountKey {
+		t.Fatalf("join without inviteCode want same accountKey, got %v", reg2["accountKey"])
+	}
+	// 无效 accountKey 仍按 400 拒绝（不因跳过邀请码而静默新建）
+	rec = doJSON(t, h, http.MethodPost, "/auth/v1/register",
+		map[string]any{"deviceName": "d4", "accountKey": "rk_nonexistent"}, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid accountKey without inviteCode want 400, got %d", rec.Code)
+	}
 }
 
 func TestStaticTokens(t *testing.T) {
