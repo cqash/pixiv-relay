@@ -2,6 +2,7 @@
 package config
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -63,6 +64,11 @@ type Config struct {
 	RateWritePerMin     float64 // 写端点（relay/sync/recover），默认 60
 	RateImgPerMin       float64 // 图片端点，默认 300
 	RateRegisterPerHour float64 // 注册端点（按 IP），默认 10
+
+	// TrustedProxies 可信反代网段（CIDR，逗号分隔）：直接对端命中时按
+	// X-Forwarded-For / X-Real-IP 取真实客户端 IP 限流。回环地址始终可信；
+	// Docker 发布端口经 docker-proxy 转发时来源被改写为网关地址，需显式声明。
+	TrustedProxies []*net.IPNet
 }
 
 // Load 读取环境变量并应用默认值。
@@ -121,7 +127,30 @@ func Load() *Config {
 		RateWritePerMin:     envFloatDef("RATE_WRITE_PER_MIN", 60),
 		RateImgPerMin:       envFloatDef("RATE_IMG_PER_MIN", 300),
 		RateRegisterPerHour: envFloatDef("RATE_REGISTER_PER_HOUR", 10),
+		TrustedProxies:      parseCIDRs(os.Getenv("TRUSTED_PROXIES")),
 	}
+}
+
+// parseCIDRs 解析逗号分隔的 CIDR 列表（裸 IP 自动补 /32 或 /128），非法项忽略。
+func parseCIDRs(s string) []*net.IPNet {
+	var out []*net.IPNet
+	for _, item := range splitCSV(s) {
+		if !strings.Contains(item, "/") {
+			ip := net.ParseIP(item)
+			if ip == nil {
+				continue
+			}
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			item = item + "/" + strconv.Itoa(bits)
+		}
+		if _, n, err := net.ParseCIDR(item); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // envFloatDef 解析正浮点配额环境变量，缺失/非法/<=0 时返回 def（防误配置锁死端点）。

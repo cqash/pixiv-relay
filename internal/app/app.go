@@ -34,6 +34,7 @@ func New(cfg *config.Config, db *sql.DB) (http.Handler, error) {
 // 创建生产客户端（relay.NewUpstreamClient）。集成测试注入自定义 Transport 把
 // 白名单域名改写到 httptest mock，保证端到端测试零真实外网。
 func NewWithClient(cfg *config.Config, db *sql.DB, upstream *http.Client) (http.Handler, error) {
+	common.SetTrustedProxies(cfg.TrustedProxies)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 

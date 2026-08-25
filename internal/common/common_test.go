@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -196,6 +197,24 @@ func TestClientIPTrustedProxy(t *testing.T) {
 	// 回环反代：两个头都缺失时仍用 RemoteAddr
 	if got := ClientIP(newReq("127.0.0.1:5678")); got != "127.0.0.1" {
 		t.Fatalf("no proxy headers should keep RemoteAddr, got %q", got)
+	}
+
+	// Docker docker-proxy 场景：来源是网关地址，声明网段后信任代理头
+	_, dockernet, _ := net.ParseCIDR("172.17.0.0/16")
+	SetTrustedProxies([]*net.IPNet{dockernet})
+	t.Cleanup(func() { SetTrustedProxies(nil) })
+
+	r = newReq("172.17.0.1:40000")
+	r.Header.Set("X-Forwarded-For", "4.4.4.4")
+	if got := ClientIP(r); got != "4.4.4.4" {
+		t.Fatalf("trusted docker gateway should use X-Forwarded-For, got %q", got)
+	}
+
+	// 未声明的网段仍不信任
+	r = newReq("10.0.0.2:40000")
+	r.Header.Set("X-Forwarded-For", "5.5.5.5")
+	if got := ClientIP(r); got != "10.0.0.2" {
+		t.Fatalf("undeclared network must ignore X-Forwarded-For, got %q", got)
 	}
 }
 

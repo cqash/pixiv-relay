@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -99,15 +100,42 @@ func (l *Limiter) Middleware(keyFn func(*http.Request) string) func(http.Handler
 	}
 }
 
-// ClientIP 取客户端 IP。直连部署用 RemoteAddr；当直接对端是回环地址
-// （本机 nginx 等可信反代）时，取 X-Forwarded-For 首个 IP，其次 X-Real-IP，
-// 使反代部署下按真实客户端限流。回环判定保证直连部署中伪造代理头无效。
+// trustedProxies 除回环外额外信任的代理网段（见 SetTrustedProxies）。
+// 仅在启动时装配一次，运行期只读。
+var trustedProxies atomic.Value // []*net.IPNet
+
+// SetTrustedProxies 声明额外信任的代理网段（TRUSTED_PROXIES 配置）。
+// Docker 发布端口经 docker-proxy 转发时，容器内看到的来源是 docker 网关
+// （如 172.17.0.1）而非回环地址，需显式把网关网段声明为可信代理。
+func SetTrustedProxies(nets []*net.IPNet) {
+	trustedProxies.Store(nets)
+}
+
+// isTrustedProxy 判断直接对端是否为可信代理：回环地址（本机 nginx 等）始终可信，
+// 其次命中 SetTrustedProxies 声明的网段。
+func isTrustedProxy(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return true
+	}
+	if nets, _ := trustedProxies.Load().([]*net.IPNet); len(nets) > 0 {
+		for _, n := range nets {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ClientIP 取客户端 IP。直连部署用 RemoteAddr；当直接对端是可信代理时，
+// 取 X-Forwarded-For 首个 IP，其次 X-Real-IP，使反代部署下按真实客户端限流。
+// 可信判定保证直连部署中伪造代理头无效。
 func ClientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	if host == "127.0.0.1" || host == "::1" {
+	if ip := net.ParseIP(host); ip != nil && isTrustedProxy(ip) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			if first, _, _ := strings.Cut(xff, ","); strings.TrimSpace(first) != "" {
 				return strings.TrimSpace(first)
