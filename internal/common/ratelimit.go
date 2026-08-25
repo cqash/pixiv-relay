@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,11 +99,23 @@ func (l *Limiter) Middleware(keyFn func(*http.Request) string) func(http.Handler
 	}
 }
 
-// ClientIP 取客户端 IP（直连部署）。反代部署待 M7 再按可信代理头扩展。
+// ClientIP 取客户端 IP。直连部署用 RemoteAddr；当直接对端是回环地址
+// （本机 nginx 等可信反代）时，取 X-Forwarded-For 首个 IP，其次 X-Real-IP，
+// 使反代部署下按真实客户端限流。回环判定保证直连部署中伪造代理头无效。
 func ClientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if host == "127.0.0.1" || host == "::1" {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if first, _, _ := strings.Cut(xff, ","); strings.TrimSpace(first) != "" {
+				return strings.TrimSpace(first)
+			}
+		}
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			return xri
+		}
 	}
 	return host
 }

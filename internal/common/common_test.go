@@ -165,6 +165,40 @@ func TestRateLimitMiddleware(t *testing.T) {
 	}
 }
 
+func TestClientIPTrustedProxy(t *testing.T) {
+	newReq := func(remoteAddr string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = remoteAddr
+		return req
+	}
+
+	// 直连部署：代理头不被信任（防伪造）
+	r := newReq("9.9.9.9:1234")
+	r.Header.Set("X-Forwarded-For", "1.1.1.1")
+	if got := ClientIP(r); got != "9.9.9.9" {
+		t.Fatalf("direct peer must ignore X-Forwarded-For, got %q", got)
+	}
+
+	// 回环反代：取 X-Forwarded-For 首个 IP
+	r = newReq("127.0.0.1:5678")
+	r.Header.Set("X-Forwarded-For", " 2.2.2.2 , 10.0.0.1")
+	if got := ClientIP(r); got != "2.2.2.2" {
+		t.Fatalf("loopback peer should use first X-Forwarded-For IP, got %q", got)
+	}
+
+	// 回环反代：X-Forwarded-For 缺失时退到 X-Real-IP
+	r = newReq("[::1]:5678")
+	r.Header.Set("X-Real-IP", "3.3.3.3")
+	if got := ClientIP(r); got != "3.3.3.3" {
+		t.Fatalf("loopback peer should fall back to X-Real-IP, got %q", got)
+	}
+
+	// 回环反代：两个头都缺失时仍用 RemoteAddr
+	if got := ClientIP(newReq("127.0.0.1:5678")); got != "127.0.0.1" {
+		t.Fatalf("no proxy headers should keep RemoteAddr, got %q", got)
+	}
+}
+
 func TestRedactHandler(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(NewRedactHandler(slog.NewJSONHandler(&buf, nil)))
