@@ -229,6 +229,39 @@ func TestInviteCodes(t *testing.T) {
 	}
 }
 
+// TestSetInviteCodesHotUpdate SetInviteCodes 热更白名单：替换与清空（开放注册）立即生效。
+func TestSetInviteCodesHotUpdate(t *testing.T) {
+	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := db.Migrate(context.Background(), database); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	svc := NewService(database, []string{"code-a"})
+
+	ctx := context.Background()
+	if _, err := svc.Register(ctx, "d1", "code-a", ""); err != nil {
+		t.Fatalf("register with initial code: %v", err)
+	}
+
+	// 热替换：旧码失效，新码生效。
+	svc.SetInviteCodes([]string{"code-b"})
+	if _, err := svc.Register(ctx, "d2", "code-a", ""); err == nil {
+		t.Fatalf("old code should be rejected after hot update")
+	}
+	if _, err := svc.Register(ctx, "d2", "code-b", ""); err != nil {
+		t.Fatalf("register with hot-updated code: %v", err)
+	}
+
+	// 清空 = 开放注册。
+	svc.SetInviteCodes(nil)
+	if _, err := svc.Register(ctx, "d3", "", ""); err != nil {
+		t.Fatalf("register without code after clearing: %v", err)
+	}
+}
+
 func TestStaticTokens(t *testing.T) {
 	h, _ := setup(t, nil, []string{"preset-static-token"})
 

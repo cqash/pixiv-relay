@@ -54,6 +54,7 @@ func getSettingsHandler(svc *Service) http.HandlerFunc {
 
 // patchSettingsHandler PATCH /admin/v1/settings（§14.2）：部分键值 JSON，
 // 全部校验通过才落库并立即热生效；未知键/非法值 400。
+// 值可以是数值（六个数值键）或字符串（invite_codes，CSV 邀请码列表，空 = 开放注册）。
 func patchSettingsHandler(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]json.RawMessage
@@ -63,12 +64,18 @@ func patchSettingsHandler(svc *Service) http.HandlerFunc {
 		}
 		patch := make(map[string]string, len(body))
 		for key, raw := range body {
-			var v json.Number
-			if err := json.Unmarshal(raw, &v); err != nil {
-				common.WriteError(w, r, common.BadRequest("invalid value for "+key+": must be a number"))
-				return
+			var num json.Number
+			if err := json.Unmarshal(raw, &num); err == nil {
+				patch[key] = num.String()
+				continue
 			}
-			patch[key] = v.String()
+			var str string
+			if err := json.Unmarshal(raw, &str); err == nil {
+				patch[key] = str
+				continue
+			}
+			common.WriteError(w, r, common.BadRequest("invalid value for "+key+": must be a number or a string"))
+			return
 		}
 		normalized, err := validatePatch(patch)
 		if err != nil {

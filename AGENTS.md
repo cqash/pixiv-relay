@@ -40,7 +40,7 @@ docker/                # Dockerfile（multi-stage → scratch/distroless）+ com
 - **协议面**：错误统一 `{error:{code,message,requestId}}`；列表端点游标分页 `{items,nextCursor}`；同步 token 按（账号 × domain）单调递增；日志绝不落 `authorization`/body（slog 脱敏 Handler）
 - **认证**：服务端账号体系与 Pixiv 解耦，`accountKey` 加入已有账号（只存哈希）；公网部署必须 `INVITE_CODES` 或 `STATIC_TOKENS`
 - **静态加密（§9，M7）**：`DATA_ENC_KEY`（base64 32B）开启后 `sync_entries.data` 与 `recover_cache` 的 pages/meta 落库前 AES-256-GCM 加密；密文带 `enc:v1:` 前缀，与存量明文混存兼容；空 = 不加密；密钥格式错误启动直接退出
-- **管理端（§14，M9）**：`ADMIN_TOKEN` 空 = `/admin/v1/*` 不注册；六键运行时设置（缓存上限/水位、recover TTL、限流）存 `settings` 表，DB > env > 默认，PATCH 立即热生效；管理 UI 在 Web 前端工程 `/admin` 路由区
+- **管理端（§14，M9）**：`ADMIN_TOKEN` 空 = `/admin/v1/*` 不注册；七个运行时设置键（缓存上限/水位、recover TTL、限流、invite_codes 邀请码）存 `settings` 表，DB > env > 默认，PATCH 立即热生效；管理 UI 在 Web 前端工程 `/admin` 路由区
 - 测试用 `net/http/httptest`，集成测试一律临时目录，不碰真实 `data/`
 
 ## 关联工程

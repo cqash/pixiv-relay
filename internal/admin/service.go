@@ -7,19 +7,21 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cqash/pixiv-relay/internal/auth"
 	"github.com/cqash/pixiv-relay/internal/cache"
 	"github.com/cqash/pixiv-relay/internal/common"
 	"github.com/cqash/pixiv-relay/internal/recover"
 )
 
 // ServerVersion 管理端上报的服务端版本（§14.3，与 /auth register 一致）。
-const ServerVersion = "1.1.0"
+const ServerVersion = "1.2.0"
 
 // Service 管理端服务：概览统计、设置热更新、缓存与账号/设备管理。
 type Service struct {
 	db           *sql.DB
 	cache        *cache.DiskLRU
 	recoverSvc   *recover.Service
+	authSvc      *auth.Service // invite_codes 热更目标
 	writeLimiter *common.Limiter
 	imgLimiter   *common.Limiter
 	env          EnvSnapshot
@@ -28,12 +30,13 @@ type Service struct {
 
 // NewService 创建管理端服务：启动时从 DB 读取覆盖项并立即应用热更挂钩
 // （§14.2：DB > env > 默认）。
-func NewService(db *sql.DB, c *cache.DiskLRU, rec *recover.Service,
+func NewService(db *sql.DB, c *cache.DiskLRU, rec *recover.Service, authSvc *auth.Service,
 	writeLimiter, imgLimiter *common.Limiter, env EnvSnapshot, startedAt time.Time) *Service {
 	s := &Service{
 		db:           db,
 		cache:        c,
 		recoverSvc:   rec,
+		authSvc:      authSvc,
 		writeLimiter: writeLimiter,
 		imgLimiter:   imgLimiter,
 		env:          env,

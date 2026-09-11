@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/cqash/pixiv-relay/internal/common"
@@ -15,6 +16,7 @@ import (
 // 落库一律 SHA-256 哈希，且绝不写日志（§5.1 / §9）。
 type Service struct {
 	db          *sql.DB
+	mu          sync.RWMutex // inviteCodes 热更（管理端设置）与注册校验的并发保护
 	inviteCodes []string
 	now         func() time.Time // 测试可注入；默认为 time.Now
 }
@@ -32,13 +34,29 @@ func NewService(db *sql.DB, inviteCodes []string) *Service {
 	return &Service{db: db, inviteCodes: inviteCodes, now: time.Now}
 }
 
+// SetInviteCodes 热更新注册邀请码白名单（管理端 invite_codes 设置，§14.2）。
+// 空切片 = 开放注册；传入副本避免外部切片被并发改动。
+func (s *Service) SetInviteCodes(codes []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inviteCodes = slices.Clone(codes)
+}
+
+// inviteCodesSnapshot 读侧取当前白名单快照。
+func (s *Service) inviteCodesSnapshot() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.inviteCodes
+}
+
 // Register 注册设备（§5.1）：
 //   - accountKey 非空时加入对应账号（无效按 400 拒绝，不静默新建）；
 //     持有有效 accountKey 即证明账号所有权，跳过邀请码校验；
 //   - accountKey 为空时新建账号并签发新 accountKey，
 //     配置了 INVITE_CODES 时 inviteCode 必须匹配，否则 403。
 func (s *Service) Register(ctx context.Context, deviceName, inviteCode, accountKey string) (*TokenPair, error) {
-	if accountKey == "" && len(s.inviteCodes) > 0 && !slices.Contains(s.inviteCodes, inviteCode) {
+	codes := s.inviteCodesSnapshot()
+	if accountKey == "" && len(codes) > 0 && !slices.Contains(codes, inviteCode) {
 		return nil, common.Forbidden("invalid invite code")
 	}
 

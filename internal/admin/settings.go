@@ -21,6 +21,7 @@ const (
 	KeyRecoverNegTTLDays  = "recover_negative_ttl_days"
 	KeyRateWritePerMin    = "rate_write_per_min"
 	KeyRateImgPerMin      = "rate_img_per_min"
+	KeyInviteCodes        = "invite_codes"
 )
 
 // 限流器 burst 常量（与 app 层构造保持一致）。
@@ -55,6 +56,22 @@ func parseWatermark(raw string) (any, error) {
 	return v, nil
 }
 
+// parseInviteCodes 解析邀请码列表（逗号/空白/换行分隔），返回规范化 CSV 文本。
+// 逐项 trim、去空、去重；整体为空 = 开放注册（与 INVITE_CODES 语义一致，§5.1）。
+func parseInviteCodes(raw string) (any, error) {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, tok := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	}) {
+		if _, dup := seen[tok]; !dup {
+			seen[tok] = struct{}{}
+			out = append(out, tok)
+		}
+	}
+	return strings.Join(out, ","), nil
+}
+
 var settingDefs = map[string]settingDef{
 	KeyCacheMaxBytes:      {"CACHE_MAX_BYTES", cache.DefaultMaxBytes, parsePositiveInt},
 	KeyCacheHighWatermark: {"CACHE_HIGH_WATERMARK", cache.DefaultHighWatermark, parseWatermark},
@@ -62,6 +79,7 @@ var settingDefs = map[string]settingDef{
 	KeyRecoverNegTTLDays:  {"RECOVER_NEGATIVE_TTL_DAYS", int64(7), parsePositiveInt},
 	KeyRateWritePerMin:    {"RATE_WRITE_PER_MIN", int64(60), parsePositiveInt},
 	KeyRateImgPerMin:      {"RATE_IMG_PER_MIN", int64(300), parsePositiveInt},
+	KeyInviteCodes:        {"INVITE_CODES", "", parseInviteCodes},
 }
 
 // SettingInfo GET 响应项：生效值 + 来源（db/env/default）。
@@ -130,6 +148,15 @@ func (s *Service) applyAll(ctx context.Context) {
 		int(m[KeyRecoverNegTTLDays].Value.(int64)))
 	s.writeLimiter.SetRate(float64(m[KeyRateWritePerMin].Value.(int64)), writeBurst)
 	s.imgLimiter.SetRate(float64(m[KeyRateImgPerMin].Value.(int64)), imgBurst)
+	s.authSvc.SetInviteCodes(csvToList(m[KeyInviteCodes].Value.(string)))
+}
+
+// csvToList 规范化 CSV 设置值 → 邀请码切片（空串 → nil，即开放注册）。
+func csvToList(csv string) []string {
+	if csv == "" {
+		return nil
+	}
+	return strings.Split(csv, ",")
 }
 
 // validatePatch 校验 PATCH 提交的部分键值：未知键/非法值返回 400，

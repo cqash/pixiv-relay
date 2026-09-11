@@ -101,7 +101,7 @@ func NewWithClient(cfg *config.Config, db *sql.DB, upstream *http.Client) (http.
 
 	// 管理端（§14）：ADMIN_TOKEN 空 = 完全关闭，不注册任何 /admin/ 路由。
 	if cfg.AdminToken != "" {
-		adminSvc := admin.NewService(db, imgCache, recoverSvc, writeLimiter, imgLimiter,
+		adminSvc := admin.NewService(db, imgCache, recoverSvc, authSvc, writeLimiter, imgLimiter,
 			admin.EnvSnapshotFromEnv(), time.Now())
 		admin.RegisterRoutes(mux, adminSvc, cfg.AdminToken)
 		slog.Info("admin API enabled at /admin/v1/")

@@ -29,6 +29,7 @@ type testEnv struct {
 	db           *sql.DB
 	cache        *cache.DiskLRU
 	recoverSvc   *recover.Service
+	authSvc      *auth.Service
 	writeLimiter *common.Limiter
 	imgLimiter   *common.Limiter
 	srv          *httptest.Server
@@ -61,6 +62,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		db:           database,
 		cache:        c,
 		recoverSvc:   recSvc,
+		authSvc:      auth.NewService(database, nil),
 		writeLimiter: common.NewLimiter(60, 10),
 		imgLimiter:   common.NewLimiter(300, 30),
 		env:          admin.EnvSnapshotFromEnv(),
@@ -72,7 +74,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 // newService 用同一批依赖重建管理端 Service（验证 DB 覆盖项重启后仍生效）。
 func (e *testEnv) newService() *admin.Service {
-	return admin.NewService(e.db, e.cache, e.recoverSvc, e.writeLimiter, e.imgLimiter, e.env, e.startedAt)
+	return admin.NewService(e.db, e.cache, e.recoverSvc, e.authSvc, e.writeLimiter, e.imgLimiter, e.env, e.startedAt)
 }
 
 func (e *testEnv) mount(t *testing.T, svc *admin.Service) {
@@ -349,6 +351,77 @@ func TestSettingsPatchCacheLimits(t *testing.T) {
 	}
 }
 
+// TestSettingsInviteCodes invite_codes：GET 暴露、PATCH 规范化、热生效到注册校验。
+func TestSettingsInviteCodes(t *testing.T) {
+	t.Run("default is open registration", func(t *testing.T) {
+		e := newTestEnv(t)
+		code, body := e.do(t, http.MethodGet, "/admin/v1/settings", testToken, nil)
+		if code != http.StatusOK {
+			t.Fatalf("get status = %d", code)
+		}
+		info, ok := settingsOf(t, body)["invite_codes"].(map[string]any)
+		if !ok {
+			t.Fatalf("missing invite_codes: %v", body)
+		}
+		if info["value"] != "" {
+			t.Fatalf("default invite_codes value = %v, want \"\"", info["value"])
+		}
+		// 开放注册：无邀请码直接注册成功。
+		if _, err := e.authSvc.Register(context.Background(), "dev", "", ""); err != nil {
+			t.Fatalf("open registration register: %v", err)
+		}
+	})
+
+	t.Run("patch normalizes and hot-applies", func(t *testing.T) {
+		e := newTestEnv(t)
+		code, body := e.do(t, http.MethodPatch, "/admin/v1/settings", testToken,
+			map[string]any{"invite_codes": "aaa111, bbb222\nbbb222\tccc333,aaa111"})
+		if code != http.StatusOK {
+			t.Fatalf("patch status = %d %v", code, body)
+		}
+		info := settingsOf(t, body)["invite_codes"].(map[string]any)
+		if info["value"] != "aaa111,bbb222,ccc333" {
+			t.Fatalf("normalized value = %v, want \"aaa111,bbb222,ccc333\"", info["value"])
+		}
+		if info["source"] != "db" {
+			t.Fatalf("source = %v, want db", info["source"])
+		}
+		// 热生效：新白名单内的码可注册，外部码 403。
+		if _, err := e.authSvc.Register(context.Background(), "dev1", "aaa111", ""); err != nil {
+			t.Fatalf("register with listed code: %v", err)
+		}
+		if _, err := e.authSvc.Register(context.Background(), "dev2", "zzz999", ""); err == nil {
+			t.Fatalf("register with unknown code should fail")
+		}
+	})
+
+	t.Run("empty string re-opens registration", func(t *testing.T) {
+		e := newTestEnv(t)
+		code, _ := e.do(t, http.MethodPatch, "/admin/v1/settings", testToken,
+			map[string]any{"invite_codes": "aaa111"})
+		if code != http.StatusOK {
+			t.Fatalf("patch status = %d", code)
+		}
+		code, _ = e.do(t, http.MethodPatch, "/admin/v1/settings", testToken,
+			map[string]any{"invite_codes": ""})
+		if code != http.StatusOK {
+			t.Fatalf("patch empty status = %d", code)
+		}
+		if _, err := e.authSvc.Register(context.Background(), "dev", "", ""); err != nil {
+			t.Fatalf("open registration after clearing codes: %v", err)
+		}
+	})
+
+	t.Run("rejects non-scalar value", func(t *testing.T) {
+		e := newTestEnv(t)
+		code, body := e.do(t, http.MethodPatch, "/admin/v1/settings", testToken,
+			map[string]any{"invite_codes": []string{"aaa111"}})
+		if code != http.StatusBadRequest {
+			t.Fatalf("array value: status = %d, want 400 (%v)", code, body)
+		}
+	})
+}
+
 // TestCacheStatsAndEvict 缓存统计与手动淘汰：返回释放字节/条数。
 func TestCacheStatsAndEvict(t *testing.T) {
 	e := newTestEnv(t)
@@ -404,7 +477,7 @@ func TestOverview(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status = %d %v", code, body)
 	}
-	if body["serverVersion"] != "1.1.0" {
+	if body["serverVersion"] != "1.2.0" {
 		t.Fatalf("serverVersion = %v", body["serverVersion"])
 	}
 	if body["accounts"].(float64) != 2 {

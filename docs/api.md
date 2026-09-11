@@ -160,9 +160,11 @@ API / OAuth 通用中继（§6.1）。鉴权 + 写限流。
 
 - `GET /admin/v1/overview` → `{ serverVersion, uptimeSec, accounts, devices, cache:{bytes,entries}, recoverCache:{status:count}, settings:{key:{value,source}} }`
 - `GET /admin/v1/settings` → `{ key: { value, source } }`，`source` ∈ `db`（运行时覆盖）/ `env` / `default`
-- `PATCH /admin/v1/settings` —— 请求体为部分键值（数值型 JSON），白名单键：
+- `PATCH /admin/v1/settings` —— 请求体为部分键值（数值型或字符串型 JSON），白名单键：
   `cache_max_bytes`、`cache_high_watermark`、`recover_ttl_days`、`recover_negative_ttl_days`、
-  `rate_write_per_min`、`rate_img_per_min`。全部校验通过才落库并**立即热生效**；未知键/非法值 400
+  `rate_write_per_min`、`rate_img_per_min`、`invite_codes`。全部校验通过才落库并**立即热生效**；未知键/非法值 400。
+  前六个键为数值；`invite_codes` 为字符串型（逗号分隔邀请码列表，语义同 `INVITE_CODES`：
+  **空 = 开放注册**），返回的生效值亦为规范化后的逗号分隔字符串
 - `GET /admin/v1/cache/stats` → `{ bytes, entries, maxBytes, highWatermark, layout, dir }`
 - `POST /admin/v1/cache/evict` —— 立即按水位淘汰 → `{ freedBytes, freedEntries, bytes, entries }`
 - `GET /admin/v1/accounts?limit=&cursor=` → `{ items: [{ id, createdAt, deviceCount, syncEntryCount }], nextCursor }`
